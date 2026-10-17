@@ -10,7 +10,6 @@ on:
       - scripts/inspect-mrpack.ps1
 
 permissions:
-  actions: write
   contents: read
 
 jobs:
@@ -77,6 +76,62 @@ jobs:
             & .\scripts\inspect-mrpack.ps1 -PackPath $pack.FullName -OutputDirectory $destination
             Copy-Item -LiteralPath (Join-Path $destination 'freeroam-pack-info.txt') -Destination $reportDirectory -Force
             Copy-Item -LiteralPath (Join-Path $destination 'freeroam-pack-info.json') -Destination $reportDirectory -Force
+
+            # Return the inventory to the agent encrypted. The repository is public;
+            # only the ciphertext is emitted as a check annotation. The private key
+            # remains outside the repository and never reaches the runner.
+            $reportParts = [System.Collections.Generic.List[string]]::new()
+            $referenceReport = Join-Path $destination 'funcity-reference-inventory.txt'
+            if (Test-Path -LiteralPath $referenceReport -PathType Leaf) {
+              $reportParts.Add('=== Existing server inventory ===')
+              $reportParts.Add((Get-Content -LiteralPath $referenceReport -Raw))
+            }
+            $packReport = Join-Path $destination 'freeroam-pack-info.txt'
+            $reportParts.Add('=== Freeroam pack inventory ===')
+            $reportParts.Add((Get-Content -LiteralPath $packReport -Raw))
+            $reportText = $reportParts -join "`n"
+            if ($reportText.Length -gt 80000) {
+              $reportText = $reportText.Substring(0, 80000) + "`n[Inventory truncated]"
+            }
+
+            $publicKeyXml = '<RSAKeyValue><Modulus>rJTy/+0btOC7NGn7FGw6U3Yd+EyDhnNamPRP+GuEJLou0ZeVCXMfIu/Re2MhNYnhMAXUQiCFGOszUw2QjLiLOfvM/zBbuCgFf946Ae11LjIB6D+500CbohGxkA9tEyyflhbUiQJyYfc2VbaBfyKi2Yom/tZhMcBsKEByv1LcEJRy1UkZx6AEdNhiNQ1C5D5J/EadrqXneHQIS81byNYdNzmw6LtViQ9Xbv8fD+5RGCQCzIzAkpMZG0utVhp1Wwj9BpPxKH4dm2IE4hh5At72Zvo/3v9rMQJ+zCqw7t6N+8tWJkuMMDe8oQrJ1lVc5OhquqewgyOa5jMzjj/UJVIftQ==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>'
+            $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+            $aes = [System.Security.Cryptography.Aes]::Create()
+            try {
+              $rsa.FromXmlString($publicKeyXml)
+              $aes.KeySize = 256
+              $aes.GenerateKey()
+              $aes.GenerateIV()
+              $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($reportText)
+              $encryptor = $aes.CreateEncryptor()
+              try {
+                $cipherBytes = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
+              }
+              finally {
+                $encryptor.Dispose()
+              }
+              $payloadObject = [ordered]@{
+                key = [Convert]::ToBase64String($rsa.Encrypt($aes.Key, $true))
+                iv = [Convert]::ToBase64String($aes.IV)
+                ciphertext = [Convert]::ToBase64String($cipherBytes)
+              }
+              $payload = ConvertTo-Json -InputObject $payloadObject -Compress
+              $payloadBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))
+              $chunkSize = 6000
+              $chunkCount = [int][Math]::Ceiling($payloadBase64.Length / [double]$chunkSize)
+              for ($index = 0; $index -lt $chunkCount; $index++) {
+                $start = $index * $chunkSize
+                $length = [Math]::Min($chunkSize, $payloadBase64.Length - $start)
+                $chunk = $payloadBase64.Substring($start, $length)
+                $title = 'FCINV-' + $index.ToString('D2') + '-' + $chunkCount.ToString('D2')
+                Write-Host "::notice title=$title::$chunk"
+              }
+            }
+            finally {
+              $aes.Dispose()
+              $rsa.Dispose()
+            }
+
             $successMessage = 'Reference scan and Freeroam pack inspection completed. No jar was executed and no pack files were modified.'
             Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value $successMessage -Encoding UTF8
             Set-Content -LiteralPath (Join-Path $destination 'freeroam-pack-status.txt') -Value $successMessage -Encoding UTF8
@@ -92,27 +147,6 @@ jobs:
           }
 
           "scan_failed=$($failed.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Remove the temporary public inventory artifact
-        if: always()
-        continue-on-error: true
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $headers = @{
-            Authorization = "Bearer $env:GH_TOKEN"
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $uri = 'https://api.github.com/repos/iZentric/FunCity/actions/artifacts/12086677341'
-          try {
-            Invoke-RestMethod -Method Delete -Uri $uri -Headers $headers -ErrorAction Stop | Out-Null
-            Write-Host 'Removed the temporary inventory artifact.'
-          }
-          catch {
-            Write-Host 'The temporary artifact was already gone or could not be deleted by this workflow token.'
-          }
 
       - name: Mark an inaccessible folder as a failed scan
         if: steps.scan.outputs.scan_failed == 'true'
