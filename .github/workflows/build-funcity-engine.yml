@@ -1,0 +1,47 @@
+name: Build full Freeroam FunCity Engine
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/build-funcity-engine.yml
+      - scripts/build-funcity-engine.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-engine-full-pack-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build isolated full-pack test engine on KERNELOS-PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 120
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Build without overwriting the existing Lite server
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $outputPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
+          if (Test-Path -LiteralPath $outputPath) {
+            throw "Full-pack test output already exists; preserving it rather than overwriting: $outputPath"
+          }
+          $buildArgs = @{
+            ProjectRoot = 'E:\Administrator\Desktop\FunCity'
+            PackPath = 'E:\Administrator\Desktop\FunCity\modpack uri\Freeroam 1.0.0.mrpack'
+            ReferencePath = 'E:\Administrator\Desktop\FunCity\servere referinta'
+            OutputParent = 'E:\Administrator\Desktop\FunCity\FunCity server'
+            OutputName = 'FunCity-Engine-Freeroam'
+            RuntimeSource = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite\runtime'
+            Port = 25566
+            HeapGB = 6
+          }
+          & .\scripts\build-funcity-engine.ps1 @buildArgs
