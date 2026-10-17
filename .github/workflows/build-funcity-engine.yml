@@ -32,16 +32,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $outputPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
           if (Test-Path -LiteralPath $outputPath) {
-            throw "Full-pack test output already exists; preserving it rather than overwriting: $outputPath"
+            Write-Output "::notice title=FunCity full-pack engine build::Existing test output preserved; refusing to rebuild over it: $outputPath"
           }
-          $buildArgs = @{
-            ProjectRoot = 'E:\Administrator\Desktop\FunCity'
-            PackPath = 'E:\Administrator\Desktop\FunCity\modpack uri\Freeroam 1.0.0.mrpack'
-            ReferencePath = 'E:\Administrator\Desktop\FunCity\servere referinta'
-            OutputParent = 'E:\Administrator\Desktop\FunCity\FunCity server'
-            OutputName = 'FunCity-Engine-Freeroam'
-            RuntimeSource = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite\runtime'
-            Port = 25566
-            HeapGB = 6
+          else {
+            $buildArgs = @{
+              ProjectRoot = 'E:\Administrator\Desktop\FunCity'
+              PackPath = 'E:\Administrator\Desktop\FunCity\modpack uri\Freeroam 1.0.0.mrpack'
+              ReferencePath = 'E:\Administrator\Desktop\FunCity\servere referinta'
+              OutputParent = 'E:\Administrator\Desktop\FunCity\FunCity server'
+              OutputName = 'FunCity-Engine-Freeroam'
+              RuntimeSource = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite\runtime'
+              Port = 25566
+              HeapGB = 6
+            }
+            & .\scripts\build-funcity-engine.ps1 @buildArgs
           }
-          & .\scripts\build-funcity-engine.ps1 @buildArgs

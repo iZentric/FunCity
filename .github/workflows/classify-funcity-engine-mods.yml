@@ -1,0 +1,33 @@
+name: Preserve client-only Freeroam mods safely
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/classify-funcity-engine-mods.yml
+      - scripts/classify-funcity-engine-mods.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-engine-full-pack-classify
+  cancel-in-progress: false
+
+jobs:
+  classify:
+    name: Separate client-only jars without deleting mods
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Preserve every pack jar and prepare a dedicated-server-safe profile
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\classify-funcity-engine-mods.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'

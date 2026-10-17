@@ -34,6 +34,14 @@ function Get-Sha256Text {
     finally { $algorithm.Dispose() }
 }
 
+function Test-ClientOnlyMod {
+    param([string]$FileName)
+    # These client render/account-switcher mods caused Forge's dedicated-server
+    # RuntimeDistCleaner failure in the first full-pack test. Preserve them in
+    # the engine bundle, but never place them in the active server mods/ folder.
+    return ($FileName -match '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-)')
+}
+
 function Get-UniqueFilePath {
     param([string]$Destination, [string]$FileName, [string]$Identity)
     $candidate = Join-Path $Destination $FileName
@@ -77,7 +85,7 @@ function Assert-ReadableJar {
 }
 
 function Download-ModFile {
-    param($FileRecord, [string]$Destination)
+    param($FileRecord, [string]$Destination, [string]$TargetDirectoryName = 'mods')
     $relativePath = ([string](Get-PropertyValue -Object $FileRecord -Name 'path')).Replace('\', '/')
     if ($relativePath -notmatch '(?i)^mods/.+\.jar$' -or $relativePath -match '(^|/)\.\.(/|$)') {
         throw "Unsafe or invalid mod path in the MRPack: $relativePath"
@@ -133,7 +141,8 @@ function Download-ModFile {
         source = 'modrinth.index.json'
         packPath = $relativePath
         file = [System.IO.Path]::GetFileName($targetPath)
-        relativeDestination = 'mods/' + [System.IO.Path]::GetFileName($targetPath)
+        relativeDestination = $TargetDirectoryName + '/' + [System.IO.Path]::GetFileName($targetPath)
+        loadOnServer = ($TargetDirectoryName -eq 'mods')
         bytes = $info.Length
         sha256 = (Get-FileHash -LiteralPath $targetPath -Algorithm SHA256).Hash.ToLowerInvariant()
         serverEnvironment = [string](Get-PropertyValue -Object (Get-PropertyValue -Object $FileRecord -Name 'env') -Name 'server')
@@ -142,7 +151,7 @@ function Download-ModFile {
 }
 
 function Copy-PackOverrides {
-    param([string]$PackPath, [string]$Destination, [string]$ModsDirectory)
+    param([string]$PackPath, [string]$Destination, [string]$ModsDirectory, [string]$ClientModsDirectory)
     $copiedConfig = [System.Collections.Generic.List[string]]::new()
     $embeddedMods = [System.Collections.Generic.List[object]]::new()
     $allowedRoots = @('config/', 'defaultconfigs/', 'kubejs/', 'scripts/', 'datapacks/')
@@ -159,7 +168,11 @@ function Copy-PackOverrides {
                 }
                 if ($relative -match '(?i)^mods/.+\.jar$') {
                     $fileName = [System.IO.Path]::GetFileName($relative)
-                    $targetPath = Get-UniqueFilePath -Destination $ModsDirectory -FileName $fileName -Identity ('override:' + $entry.FullName)
+                    $clientOnly = Test-ClientOnlyMod -FileName $fileName
+                    $targetFolderName = if ($clientOnly) { 'client-only-mods' } else { 'mods' }
+                    $targetDirectory = if ($clientOnly) { $ClientModsDirectory } else { $ModsDirectory }
+                    $serverEnvironment = if ($clientOnly) { 'client-only; preserved but not loaded by server' } else { 'embedded; loaded for full-pack test' }
+                    $targetPath = Get-UniqueFilePath -Destination $targetDirectory -FileName $fileName -Identity ('override:' + $entry.FullName)
                     $input = $entry.Open()
                     $output = [System.IO.File]::Create($targetPath)
                     try { $input.CopyTo($output) }
@@ -169,10 +182,11 @@ function Copy-PackOverrides {
                         source = 'embedded override'
                         packPath = $entry.FullName
                         file = [System.IO.Path]::GetFileName($targetPath)
-                        relativeDestination = 'mods/' + [System.IO.Path]::GetFileName($targetPath)
+                        relativeDestination = $targetFolderName + '/' + [System.IO.Path]::GetFileName($targetPath)
+                        loadOnServer = (-not $clientOnly)
                         bytes = (Get-Item -LiteralPath $targetPath).Length
                         sha256 = (Get-FileHash -LiteralPath $targetPath -Algorithm SHA256).Hash.ToLowerInvariant()
-                        serverEnvironment = 'embedded; loaded for full-pack test'
+                        serverEnvironment = $serverEnvironment
                         clientEnvironment = 'embedded'
                     })
                     continue
@@ -273,7 +287,9 @@ New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
 $allMods = [System.Collections.Generic.List[object]]::new()
 $buildNotes = [System.Collections.Generic.List[string]]::new()
 $modsDirectory = Join-Path $stagingPath 'mods'
+$clientModsDirectory = Join-Path $stagingPath 'client-only-mods'
 New-Item -ItemType Directory -Path $modsDirectory -Force | Out-Null
+New-Item -ItemType Directory -Path $clientModsDirectory -Force | Out-Null
 
 try {
     Copy-Item -LiteralPath $sourceEngineJar -Destination (Join-Path $stagingPath 'server.jar') -Force
@@ -299,15 +315,21 @@ try {
     foreach ($file in $manifestMods) {
         $indexNumber++
         $sourcePath = [string](Get-PropertyValue -Object $file -Name 'path')
-        Write-Host ("Downloading verified manifest mod {0}/{1}: {2}" -f $indexNumber, $manifestMods.Count, [System.IO.Path]::GetFileName($sourcePath))
-        $record = Download-ModFile -FileRecord $file -Destination $modsDirectory
+        $fileName = [System.IO.Path]::GetFileName($sourcePath)
+        $clientOnly = Test-ClientOnlyMod -FileName $fileName
+        $targetFolderName = if ($clientOnly) { 'client-only-mods' } else { 'mods' }
+        $targetDirectory = if ($clientOnly) { $clientModsDirectory } else { $modsDirectory }
+        Write-Host ("Downloading verified manifest mod {0}/{1}: {2} -> {3}" -f $indexNumber, $manifestMods.Count, $fileName, $targetFolderName)
+        $record = Download-ModFile -FileRecord $file -Destination $targetDirectory -TargetDirectoryName $targetFolderName
         $allMods.Add($record)
     }
 
-    $overrideResult = Copy-PackOverrides -PackPath $resolvedPack -Destination $stagingPath -ModsDirectory $modsDirectory
+    $overrideResult = Copy-PackOverrides -PackPath $resolvedPack -Destination $stagingPath -ModsDirectory $modsDirectory -ClientModsDirectory $clientModsDirectory
     foreach ($record in $overrideResult.embeddedMods) { $allMods.Add($record) }
+    $serverLoadedCount = @($allMods | Where-Object { $_.loadOnServer }).Count
+    $clientOnlyCount = @($allMods | Where-Object { -not $_.loadOnServer }).Count
     $buildNotes.Add('Copied ' + $overrideResult.configFiles.Count + ' safe config/defaultconfig/KubeJS/script/datapack override files.')
-    $buildNotes.Add('Loaded all manifest-listed and embedded override mod JARs in mods/ for full-pack compatibility testing.')
+    $buildNotes.Add("Loaded $serverLoadedCount server-compatible mod JARs in mods/; preserved $clientOnlyCount client-only JARs under client-only-mods/ after the full-pack failure identified dedicated-server-only class references.")
 
     $properties = @(
         '# FunCity Engine — full Freeroam modpack test instance',
@@ -367,7 +389,9 @@ pause
         engine = 'Mohist 1.16.5-1242 / Forge 36.2.42'
         port = $Port
         heapGB = $HeapGB
-        sourceModJarCount = $manifestMods.Count + $overrideResult.embeddedMods.Count
+        sourceModJarCount = $allMods.Count
+        serverModJarCount = $serverLoadedCount
+        clientOnlyModJarCount = $clientOnlyCount
         mods = @($allMods)
     }
     Set-Content -LiteralPath (Join-Path $stagingPath 'pack-mod-inventory.json') -Value (ConvertTo-Json -InputObject $inventory -Depth 8) -Encoding UTF8
@@ -379,7 +403,7 @@ pause
     $readme.Add("Pack: $([System.IO.Path]::GetFileName($resolvedPack)); Minecraft $minecraftVersion; Forge $forgeVersion.")
     $readme.Add("Engine: Mohist 1.16.5-1242; test port $Port; heap maximum ${HeapGB} GB.")
     $readme.Add('')
-    $readme.Add('All mod JARs from modrinth.index.json and mods/ entries embedded in overrides/server-overrides are loaded in mods/ for this compatibility test. Some packs incorrectly mark client-only mods as server-required; if a dedicated-server-only error appears, keep the JAR in the distribution but move it out of mods/ before the next server test.')
+    $readme.Add("All $($allMods.Count) pack mod JARs are retained in this engine. $serverLoadedCount server-compatible mods are in mods/; $clientOnlyCount render/account-switcher mods are in client-only-mods/ and are deliberately not loaded by a dedicated server because the first test reported invalid DEDICATED_SERVER client-class references.")
     $readme.Add('No additional plugins were added, so this test isolates the pack and hybrid engine.')
     $readme.Add('The server uses only the copied, checksum-verified portable Temurin JRE 11.0.32.1. start.bat has no system-Java fallback.')
     $readme.Add('The owner explicitly accepted the Minecraft EULA; eula.txt is true for this instance.')
@@ -392,13 +416,15 @@ pause
     $report.Add("Engine: Mohist 1.16.5-1242 / Forge 36.2.42; port=$Port; heap-max=${HeapGB} GB")
     $report.Add('Manifest mod JARs downloaded and hash-verified: ' + $manifestMods.Count)
     foreach ($record in @($allMods | Where-Object { $_.source -eq 'modrinth.index.json' })) {
-        $report.Add("  mod: $($record.file) | server=$($record.serverEnvironment) | SHA-256=$($record.sha256)")
+        $report.Add("  mod: $($record.file) | server=$($record.serverEnvironment) | load-on-server=$($record.loadOnServer) | destination=$($record.relativeDestination) | SHA-256=$($record.sha256)")
     }
     $report.Add('Embedded override mod JARs copied and validated: ' + $overrideResult.embeddedMods.Count)
     foreach ($record in $overrideResult.embeddedMods) {
-        $report.Add("  embedded mod: $($record.file) | from=$($record.packPath) | SHA-256=$($record.sha256)")
+        $report.Add("  embedded mod: $($record.file) | from=$($record.packPath) | load-on-server=$($record.loadOnServer) | destination=$($record.relativeDestination) | SHA-256=$($record.sha256)")
     }
-    $report.Add('Total active mod JARs in mods/: ' + $allMods.Count)
+    $report.Add('All pack mod JARs retained: ' + $allMods.Count)
+    $report.Add('Server-loaded JARs in mods/: ' + $serverLoadedCount)
+    $report.Add('Client-only JARs preserved outside mods/: ' + $clientOnlyCount)
     $report.Add('No extra plugins were copied; this is an isolated modpack test.')
     foreach ($note in $buildNotes) { $report.Add('Note: ' + $note) }
     $report.Add('EULA: true (accepted by owner).')
@@ -406,8 +432,8 @@ pause
 
     [System.IO.Directory]::Move($stagingPath, $finalPath)
     Write-Host "FunCity full-pack test engine prepared at: $finalPath"
-    Write-Host "Manifest mods=$($manifestMods.Count); embedded override mods=$($overrideResult.embeddedMods.Count); total active mods=$($allMods.Count); port=$Port; Java=portable Temurin 11.0.32.1."
-    Write-Output "::notice title=FunCity full-pack engine build::Output=$finalPath; manifest-mods=$($manifestMods.Count); embedded-mods=$($overrideResult.embeddedMods.Count); total-loaded=$($allMods.Count); port=$Port; engine=Mohist-1.16.5-1242/Forge-36.2.42; Java=portable-Temurin-11.0.32.1"
+    Write-Host "Manifest mods=$($manifestMods.Count); embedded override mods=$($overrideResult.embeddedMods.Count); server-loaded=$serverLoadedCount; client-only-preserved=$clientOnlyCount; total-pack-mods=$($allMods.Count); port=$Port; Java=portable Temurin 11.0.32.1."
+    Write-Output "::notice title=FunCity full-pack engine build::Output=$finalPath; manifest-mods=$($manifestMods.Count); embedded-mods=$($overrideResult.embeddedMods.Count); server-loaded=$serverLoadedCount; client-only-preserved=$clientOnlyCount; total-pack-mods=$($allMods.Count); port=$Port; engine=Mohist-1.16.5-1242/Forge-36.2.42; Java=portable-Temurin-11.0.32.1"
 }
 catch {
     $failureReport = Join-Path $stagingPath 'BUILD-FAILED.txt'
