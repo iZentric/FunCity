@@ -106,12 +106,9 @@ foreach ($mod in $mods) {
 foreach ($entry in $embeddedServerMods) { $lines.Add('embedded-server-override: ' + $entry.FullName) }
 foreach ($entry in $embeddedClientMods) { $lines.Add('embedded-client-override: ' + $entry.FullName) }
 
-$summary = "Minecraft=$minecraft; Forge=$forge; manifest-mods=$($mods.Count); server-compatible=$($serverMods.Count); client-only=$($clientOnlyMods.Count); unmarked=$($unmarkedMods.Count); embedded-server-mods=$($embeddedServerMods.Count); embedded-client-mods=$($embeddedClientMods.Count); RAM=$totalMemoryGB/$freeMemoryGB GB free; E-drive-free=$freeDiskGB GB; full-engine-output=absent"
 $manifestModList = ($mods | ForEach-Object { $_.name + ' [server=' + $_.server + '; client=' + $_.client + ']' }) -join ' | '
 $embeddedServerList = ($embeddedServerMods | ForEach-Object { [System.IO.Path]::GetFileName($_.FullName) }) -join ' | '
 $embeddedClientList = ($embeddedClientMods | ForEach-Object { [System.IO.Path]::GetFileName($_.FullName) }) -join ' | '
+$summary = "Minecraft=$minecraft; Forge=$forge; manifest-mods=$($mods.Count); server-compatible=$($serverMods.Count); client-only=$($clientOnlyMods.Count); unmarked=$($unmarkedMods.Count); embedded-server-mods=$($embeddedServerMods.Count); embedded-client-mods=$($embeddedClientMods.Count); RAM=$totalMemoryGB/$freeMemoryGB GB free; E-drive-free=$freeDiskGB GB; full-engine-output=absent; manifest-files=$manifestModList; embedded-server=$embeddedServerList; embedded-client=$embeddedClientList"
 Write-Output "::notice title=FunCity Freeroam engine preflight::$summary"
-Write-Output "::notice title=Freeroam manifest mod files::$manifestModList"
-Write-Output "::notice title=Embedded server mod overrides::$embeddedServerList"
-Write-Output "::notice title=Embedded client mod overrides::$embeddedClientList"
 foreach ($line in $lines) { Write-Output $line }
