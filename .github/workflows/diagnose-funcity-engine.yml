@@ -1,0 +1,33 @@
+name: Diagnose full Freeroam FunCity Engine
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/diagnose-funcity-engine.yml
+      - scripts/diagnose-funcity-engine.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-engine-full-pack-diagnose
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Read-only full-pack startup diagnosis on KERNELOS-PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Inspect the engine logs and process state only
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\diagnose-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
