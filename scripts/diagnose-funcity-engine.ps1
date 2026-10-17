@@ -74,6 +74,7 @@ $uniqueLines = @($interesting | Select-Object -Unique)
 $details = $uniqueLines -join ' | '
 if ($details.Length -gt 9000) { $details = $details.Substring(0, 9000) }
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
-$summary = "Task=$($task.State); PID-file=$pidValue; process=$processSummary; port=$port/$portState; mods=$($mods.Count)/$($inventory.sourceModJarCount); EULA=$([bool]($eula -match '(?im)^\s*eula\s*=\s*true\s*$')); crash-report=$crashName; diagnostics=$details"
+$logTimestamp = if (Test-Path -LiteralPath $latest -PathType Leaf) { (Get-Item -LiteralPath $latest).LastWriteTime.ToString('s') } else { 'missing' }
+$summary = "Task=$($task.State); PID-file=$pidValue; process=$processSummary; port=$port/$portState; mods=$($mods.Count)/$($inventory.sourceModJarCount); EULA=$([bool]($eula -match '(?im)^\s*eula\s*=\s*true\s*$')); latest-log-time=$logTimestamp; crash-report=$crashName; diagnostics=$details"
 Write-Output "::notice title=FunCity Freeroam startup diagnosis::$summary"
 Write-Output $summary
