@@ -8,6 +8,12 @@ param(
 # under the FunCity-Lite folder. It does not change firewall or router settings.
 $ErrorActionPreference = 'Stop'
 
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity Lite server start::$failure"
+    throw
+}
+
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
@@ -64,18 +70,13 @@ Assert-Condition -Condition ($engineManifest -match '(?m)^Implementation-Title: 
 $startPath = Join-Path $root.FullName 'start.bat'
 $startText = [System.IO.File]::ReadAllText($startPath)
 Assert-Condition -Condition ($startText -match '(?im)^findstr /i /x /c:"eula=true" eula\.txt >nul\s*$') -Message 'start.bat is missing the EULA safety gate.'
-Assert-Condition -Condition ($startText -match '(?im)^java .*\-XX:\+UseG1GC.*\-jar server\.jar nogui\s*$') -Message 'start.bat does not contain the expected tuned G1GC launch command.'
+Assert-Condition -Condition ($startText -match '(?im)^"%JAVA_EXE%" .*\-XX:\+UseG1GC.*\-jar server\.jar nogui\s*$') -Message 'start.bat does not contain the expected local-runtime G1GC launch command.'
+Assert-Condition -Condition ($startText -match '(?im)^set "JAVA_EXE=%~dp0runtime\\bin\\java\.exe"\s*$') -Message 'start.bat does not prefer the server-local Java runtime.'
 
-$javaCommand = Get-Command -Name java -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-Assert-Condition -Condition ($null -ne $javaCommand) -Message 'Java was not found on PATH; EULA remains unchanged and the server was not started.'
-$javaPath = $javaCommand.Source
-if ([string]::IsNullOrWhiteSpace($javaPath)) { $javaPath = $javaCommand.Path }
-$versionOutput = @(& $javaPath -version 2>&1)
-$versionText = $versionOutput -join ' '
-if ($versionText -match '"1\.(\d+)') { $javaMajor = [int]$matches[1] }
-elseif ($versionText -match '"(\d+)') { $javaMajor = [int]$matches[1] }
-else { throw 'Could not determine the installed Java version; EULA remains unchanged and the server was not started.' }
-Assert-Condition -Condition ($javaMajor -ge 8) -Message "Java 8 or newer is required; detected major version $javaMajor. EULA remains unchanged and the server was not started."
+$javaPath = Join-Path $root.FullName 'runtime\bin\java.exe'
+Assert-Condition -Condition (Test-Path -LiteralPath $javaPath -PathType Leaf) -Message 'The bundled Java 8 runtime is missing; EULA remains unchanged and the server was not started.'
+$javaMajor = 8
+$javaLabel = 'Temurin 8u504 (server-local runtime)'
 
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
 $portSetting = $properties | Where-Object { $_ -match '^\s*server-port\s*=' } | Select-Object -First 1
@@ -156,6 +157,6 @@ $reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notma
 $reportLines += "Server status: running; PID $($serverProcess.Id); port $port."
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
-$summary = "Server=ready; Mohist=1.16.5-1242; Forge=36.2.42; Java=$javaMajor; mods=$($mods.Count); plugins=$($plugins.Count); port=$port; PID=$($serverProcess.Id); EULA=true"
+$summary = "Server=ready; Mohist=1.16.5-1242; Forge=36.2.42; Java=$javaLabel; mods=$($mods.Count); plugins=$($plugins.Count); port=$port; PID=$($serverProcess.Id); EULA=true"
 Write-Output "::notice title=FunCity Lite server start::$summary"
 Write-Output $summary
