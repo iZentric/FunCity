@@ -103,9 +103,19 @@ jobs:
               $aes.GenerateKey()
               $aes.GenerateIV()
               $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($reportText)
+              $compressedStream = [System.IO.MemoryStream]::new()
+              $gzip = [System.IO.Compression.GZipStream]::new($compressedStream, [System.IO.Compression.CompressionMode]::Compress, $true)
+              try {
+                $gzip.Write($plainBytes, 0, $plainBytes.Length)
+              }
+              finally {
+                $gzip.Dispose()
+              }
+              $compressedBytes = $compressedStream.ToArray()
+              $compressedStream.Dispose()
               $encryptor = $aes.CreateEncryptor()
               try {
-                $cipherBytes = $encryptor.TransformFinalBlock($plainBytes, 0, $plainBytes.Length)
+                $cipherBytes = $encryptor.TransformFinalBlock($compressedBytes, 0, $compressedBytes.Length)
               }
               finally {
                 $encryptor.Dispose()
