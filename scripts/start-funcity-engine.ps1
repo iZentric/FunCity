@@ -92,6 +92,9 @@ $expectedClientOnly = [int]$inventory.clientOnlyModJarCount
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction Stop)
 $clientMods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'client-only-mods') -File -Filter '*.jar' -ErrorAction Stop)
 Assert-Condition -Condition ($mods.Count -eq $expectedServer -and $clientMods.Count -eq $expectedClientOnly -and $mods.Count + $clientMods.Count -eq $expectedTotal -and $expectedTotal -eq @($inventory.mods).Count) -Message "Full pack mod count changed: server=$($mods.Count)/$expectedServer; client-only=$($clientMods.Count)/$expectedClientOnly; total=$expectedTotal."
+$clientOnlyPattern = '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-)'
+$unsafeActiveMods = @($mods | Where-Object { $_.Name -match $clientOnlyPattern })
+Assert-Condition -Condition ($unsafeActiveMods.Count -eq 0) -Message ('A client-only mod is still in the active server mods folder: ' + ($unsafeActiveMods.Name -join ', '))
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
 Assert-Condition -Condition ($eula -match '(?im)^\s*eula\s*=\s*true\s*$') -Message 'The accepted EULA setting is not true; server was not started.'
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
