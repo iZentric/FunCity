@@ -1,0 +1,39 @@
+name: Build FunCity Lite server
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/build-funcity-lite.yml
+      - scripts/build-funcity-lite.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-lite-server-build
+  cancel-in-progress: false
+
+jobs:
+  build-server:
+    name: Build in the requested PC folder
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 90
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Build the isolated FunCity Lite server
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $buildArgs = @{
+            ProjectRoot = 'E:\Administrator\Desktop\FunCity'
+            ReferencePath = 'E:\Administrator\Desktop\FunCity\servere referinta'
+            OutputParent = 'E:\Administrator\Desktop\FunCity\FunCity server'
+            OutputName = 'FunCity-Lite'
+          }
+          & .\scripts\build-funcity-lite.ps1 @buildArgs
