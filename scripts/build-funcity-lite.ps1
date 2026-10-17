@@ -282,7 +282,7 @@ set "JAVA_EXE=%~dp0runtime\bin\java.exe"
 if not exist "%JAVA_EXE%" (
   where java >nul 2>&1
   if errorlevel 1 (
-    echo Bundled Java 8 or a system Java runtime was not found.
+    echo Bundled Java 11 or a system Java runtime was not found.
     pause
     exit /b 1
   )

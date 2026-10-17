@@ -64,7 +64,7 @@ $javaSetup = @(
     'if not exist "%JAVA_EXE%" (',
     '  where java >nul 2>&1',
     '  if errorlevel 1 (',
-    '    echo Bundled Java 8 or a system Java runtime was not found.',
+    '    echo Bundled Java 11 or a system Java runtime was not found.',
     '    pause',
     '    exit /b 1',
     '  )',
@@ -77,7 +77,12 @@ $findstrIndex = [Array]::IndexOf($lines, $findstrLine)
 Assert-Condition -Condition ($findstrIndex -gt 0) -Message 'The EULA gate line could not be located.'
 $setupChanged = $false
 if ($lines -contains $javaSetupLine) {
-    # Already has the local-runtime preference; leave this block alone.
+    # Refresh the guidance if a prior build used the previous Java major version.
+    $oldJavaErrorLine = '    echo Bundled Java 8 or a system Java runtime was not found.'
+    $newJavaErrorLine = '    echo Bundled Java 11 or a system Java runtime was not found.'
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -ceq $oldJavaErrorLine) { $lines[$i] = $newJavaErrorLine; $setupChanged = $true }
+    }
 }
 else {
     $whereIndex = [Array]::IndexOf($lines, 'where java >nul 2>&1')

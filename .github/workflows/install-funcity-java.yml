@@ -25,7 +25,7 @@ jobs:
         with:
           ref: ${{ github.ref }}
 
-      - name: Install checksum-verified Java 8 locally
+      - name: Install checksum-verified Java 11 locally
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
