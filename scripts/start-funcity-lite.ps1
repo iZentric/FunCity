@@ -74,9 +74,12 @@ Assert-Condition -Condition ($startText -match '(?im)^"%JAVA_EXE%" .*\-XX:\+UseG
 Assert-Condition -Condition ($startText -match '(?im)^set "JAVA_EXE=%~dp0runtime\\bin\\java\.exe"\s*$') -Message 'start.bat does not prefer the server-local Java runtime.'
 
 $javaPath = Join-Path $root.FullName 'runtime\bin\java.exe'
-Assert-Condition -Condition (Test-Path -LiteralPath $javaPath -PathType Leaf) -Message 'The bundled Java 8 runtime is missing; EULA remains unchanged and the server was not started.'
-$javaMajor = 8
-$javaLabel = 'Temurin 8u504 (server-local runtime)'
+$javaVersionNotePath = Join-Path $root.FullName 'runtime\JAVA-VERSION.txt'
+Assert-Condition -Condition (Test-Path -LiteralPath $javaPath -PathType Leaf) -Message 'The bundled Java 11 runtime is missing; EULA remains unchanged and the server was not started.'
+Assert-Condition -Condition (Test-Path -LiteralPath $javaVersionNotePath -PathType Leaf) -Message 'The bundled Java runtime verification marker is missing; EULA remains unchanged and the server was not started.'
+$javaVersionNote = Get-Content -LiteralPath $javaVersionNotePath -Raw
+Assert-Condition -Condition ($javaVersionNote -match 'Temurin JRE 11\.0\.32\.1' -and $javaVersionNote -match 'SHA-256 verified') -Message 'The bundled Java runtime is not the checksum-verified Temurin JRE 11.0.32.1; EULA remains unchanged and the server was not started.'
+$javaLabel = 'Temurin JRE 11.0.32.1 (server-local runtime)'
 
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
 $portSetting = $properties | Where-Object { $_ -match '^\s*server-port\s*=' } | Select-Object -First 1
@@ -108,7 +111,7 @@ Assert-Condition -Condition ($eulaAfter -match '(?im)^\s*eula\s*=\s*true\s*$') -
 $reportPath = Join-Path $root.FullName 'BUILD-REPORT.txt'
 $reportText = [System.IO.File]::ReadAllText($reportPath)
 $reportText = $reportText.Replace('EULA: false (awaiting owner acceptance)', 'EULA: true (owner explicitly accepted; server startup authorized)')
-$reportLines = @($reportText -split "`r?`n" | Where-Object { $_ -notmatch '^Server status:' })
+$reportLines = @($reportText -split "`r?`n" | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Java runtime:' })
 $reportLines += 'Server status: startup pending; Java launch not yet confirmed.'
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
@@ -133,7 +136,7 @@ $launchArguments = @(
 )
 $serverProcess = Start-Process -FilePath $javaPath -ArgumentList $launchArguments -WorkingDirectory $root.FullName -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
 Set-Content -LiteralPath (Join-Path $root.FullName 'server.pid') -Value $serverProcess.Id -Encoding ASCII
-$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' })
+$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Java runtime:' })
 $reportLines += "Server status: startup pending; PID $($serverProcess.Id); port $port."
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
@@ -153,10 +156,21 @@ while ((Get-Date) -lt $deadline) {
 }
 if (-not $ready) { throw "Server process $($serverProcess.Id) is still alive but not confirmed ready after 10 minutes. Inspect logs/latest.log inside FunCity-Lite." }
 
-$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' })
+$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Java runtime:' })
 $reportLines += "Server status: running; PID $($serverProcess.Id); port $port."
+$reportLines += 'Java runtime: ' + $javaLabel
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
-$summary = "Server=ready; Mohist=1.16.5-1242; Forge=36.2.42; Java=$javaLabel; mods=$($mods.Count); plugins=$($plugins.Count); port=$port; PID=$($serverProcess.Id); EULA=true"
+$legacyRuntimePath = Join-Path $root.FullName 'runtime-java8-backup'
+$legacyRuntimeCleaned = $false
+if (Test-Path -LiteralPath $legacyRuntimePath -PathType Container) {
+    $legacyVersionNote = Join-Path $legacyRuntimePath 'JAVA-VERSION.txt'
+    if ((Test-Path -LiteralPath $legacyVersionNote -PathType Leaf) -and (Get-Content -LiteralPath $legacyVersionNote -Raw) -match 'Temurin JRE 8u504') {
+        Remove-Item -LiteralPath $legacyRuntimePath -Recurse -Force -ErrorAction SilentlyContinue
+        $legacyRuntimeCleaned = -not (Test-Path -LiteralPath $legacyRuntimePath)
+    }
+}
+
+$summary = "Server=ready; Mohist=1.16.5-1242; Forge=36.2.42; Java=$javaLabel; mods=$($mods.Count); plugins=$($plugins.Count); port=$port; PID=$($serverProcess.Id); EULA=true; old-runtime-cleaned=$legacyRuntimeCleaned"
 Write-Output "::notice title=FunCity Lite server start::$summary"
 Write-Output $summary

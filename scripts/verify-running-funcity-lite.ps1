@@ -34,6 +34,10 @@ Assert-Condition -Condition ($resolvedServerPath.StartsWith($allowedRoot, [Syste
 $root = Get-Item -LiteralPath $resolvedServerPath -ErrorAction Stop
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
 Assert-Condition -Condition ($eula -match '(?im)^\s*eula\s*=\s*true\s*$') -Message 'EULA is not accepted in the installed server folder.'
+$javaVersionNotePath = Join-Path $root.FullName 'runtime\JAVA-VERSION.txt'
+Assert-Condition -Condition (Test-Path -LiteralPath $javaVersionNotePath -PathType Leaf) -Message 'The local Java runtime verification marker is missing.'
+$javaVersionNote = Get-Content -LiteralPath $javaVersionNotePath -Raw
+Assert-Condition -Condition ($javaVersionNote -match 'Temurin JRE 11\.0\.32\.1' -and $javaVersionNote -match 'SHA-256 verified') -Message 'The server-local Java runtime is not the checksum-verified Temurin JRE 11.0.32.1.'
 
 $pidPath = Join-Path $root.FullName 'server.pid'
 Assert-Condition -Condition (Test-Path -LiteralPath $pidPath -PathType Leaf) -Message 'server.pid is missing.'
@@ -52,6 +56,6 @@ Assert-Condition -Condition (Test-Path -LiteralPath $latestLog -PathType Leaf) -
 $logText = [System.IO.File]::ReadAllText($latestLog)
 Assert-Condition -Condition ($logText -match '(?i)Done \([^)]+\)!') -Message 'Minecraft has not reported a ready state yet.'
 
-$summary = "Running=true; PID=$serverPid; port=$port listening locally; startup=Done; EULA=true; logs remain in FunCity-Lite"
+$summary = "Running=true; PID=$serverPid; Java=Temurin JRE 11.0.32.1; port=$port listening locally; startup=Done; EULA=true; logs remain in FunCity-Lite"
 Write-Output "::notice title=FunCity Lite running check::$summary"
 Write-Output $summary
