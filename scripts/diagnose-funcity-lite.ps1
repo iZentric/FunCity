@@ -7,6 +7,12 @@ param(
 # outside the specified FunCity project folder.
 $ErrorActionPreference = 'Stop'
 
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity Lite startup diagnosis::$failure"
+    throw
+}
+
 function Test-LocalTcpPort {
     param([int]$Port)
     $client = New-Object System.Net.Sockets.TcpClient
