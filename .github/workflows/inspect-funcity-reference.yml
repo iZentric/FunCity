@@ -117,7 +117,7 @@ jobs:
               }
               $payload = ConvertTo-Json -InputObject $payloadObject -Compress
               $payloadBase64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload))
-              $chunkSize = 6000
+              $chunkSize = 3000
               $chunkCount = [int][Math]::Ceiling($payloadBase64.Length / [double]$chunkSize)
               for ($index = 0; $index -lt $chunkCount; $index++) {
                 $start = $index * $chunkSize
