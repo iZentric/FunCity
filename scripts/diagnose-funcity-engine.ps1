@@ -32,12 +32,23 @@ $inventory = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path 
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
 $taskName = 'FunCity-Freeroam-Mohist-Test'
 $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+$taskRunInfo = 'unavailable'
+if ($null -ne $task) {
+    try {
+        $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+        $taskRunInfo = "last-result=$($taskInfo.LastTaskResult); last-run=$($taskInfo.LastRunTime.ToString('s'))"
+    }
+    catch { $taskRunInfo = 'task run information unavailable' }
+}
 $pidPath = Join-Path $root.FullName 'server.pid'
 $pidValue = if (Test-Path -LiteralPath $pidPath -PathType Leaf) { (Get-Content -LiteralPath $pidPath -Raw).Trim() } else { 'none' }
 $processSummary = 'not found'
 if ($pidValue -match '^\d+$') {
     $process = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction SilentlyContinue
-    if ($null -ne $process) { $processSummary = "$($process.Name)/$($process.ProcessId)" }
+    if ($null -ne $process) {
+        $processSummary = "$($process.Name)/$($process.ProcessId); executable=$($process.ExecutablePath); command=$($process.CommandLine)"
+        if ($processSummary.Length -gt 1400) { $processSummary = $processSummary.Substring(0, 1400) }
+    }
 }
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
 $portLine = $properties | Where-Object { $_ -match '^\s*server-port\s*=' } | Select-Object -First 1
@@ -47,19 +58,21 @@ $portState = if (Test-LocalTcpPort -Port $port) { 'open' } else { 'closed' }
 $logDetails = [System.Collections.Generic.List[string]]::new()
 $crashDetails = [System.Collections.Generic.List[string]]::new()
 $latest = Join-Path $root.FullName 'logs\latest.log'
+$doneMarkerCount = 0
 if (Test-Path -LiteralPath $latest -PathType Leaf) {
     $logLines = @(Get-Content -LiteralPath $latest -Tail 600 -ErrorAction SilentlyContinue)
+    $doneMarkerCount = @($logLines | Where-Object { $_ -match '(?i)Done \([^)]+\)!' }).Count
     foreach ($line in ($logLines | Where-Object { $_ -match '(?i)(FATAL|ERROR|Exception|Caused by:|NoClassDefFoundError|ClassNotFoundException|wrong side|invalid dist|client class|failed to load|modloadingexception|mixin apply failed|crash report)' } | Select-Object -Last 30)) {
         $logDetails.Add($line.Trim())
     }
-    foreach ($line in ($logLines | Select-Object -Last 15)) { $logDetails.Add('TAIL: ' + $line.Trim()) }
+    foreach ($line in ($logLines | Select-Object -Last 35)) { $logDetails.Add('TAIL: ' + $line.Trim()) }
 }
 $crashDirectory = Join-Path $root.FullName 'crash-reports'
 $crashName = 'none'
 if (Test-Path -LiteralPath $crashDirectory -PathType Container) {
     $crash = Get-ChildItem -LiteralPath $crashDirectory -File -Filter '*.txt' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($null -ne $crash) {
-        $crashName = $crash.Name
+        $crashName = "$($crash.Name)@$($crash.LastWriteTime.ToString('s'))"
         $crashLines = @(Get-Content -LiteralPath $crash.FullName -ErrorAction SilentlyContinue)
         foreach ($line in $crashLines) {
             if ($line -match '(?i)(Description:|Failure message:|Mod File:|Exception|Caused by:|NoClassDefFoundError|ClassNotFoundException|wrong side|invalid dist|client class|Suspected Mods:|Mod List:|-- MOD )') {
@@ -74,7 +87,13 @@ $crashSummary = (@($crashDetails | Select-Object -Unique) -join ' | ')
 $details = "CRASH-REPORT: $crashSummary || LATEST-LOG: $logSummary"
 if ($details.Length -gt 9000) { $details = $details.Substring(0, 9000) }
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
-$logTimestamp = if (Test-Path -LiteralPath $latest -PathType Leaf) { (Get-Item -LiteralPath $latest).LastWriteTime.ToString('s') } else { 'missing' }
-$summary = "Task=$($task.State); PID-file=$pidValue; process=$processSummary; port=$port/$portState; mods=$($mods.Count)/$($inventory.sourceModJarCount); EULA=$([bool]($eula -match '(?im)^\s*eula\s*=\s*true\s*$')); latest-log-time=$logTimestamp; crash-report=$crashName; diagnostics=$details"
+$logTimestamp = 'missing'
+$logLength = 0
+if (Test-Path -LiteralPath $latest -PathType Leaf) {
+    $logInfo = Get-Item -LiteralPath $latest -ErrorAction Stop
+    $logTimestamp = $logInfo.LastWriteTime.ToString('s')
+    $logLength = $logInfo.Length
+}
+$summary = "Task=$($task.State); $taskRunInfo; PID-file=$pidValue; process=$processSummary; port=$port/$portState; mods=$($mods.Count)/$($inventory.sourceModJarCount); EULA=$([bool]($eula -match '(?im)^\s*eula\s*=\s*true\s*$')); latest-log=$logTimestamp/$logLength-bytes; Done-markers-in-tail=$doneMarkerCount; crash-report=$crashName; diagnostics=$details"
 Write-Output "::notice title=FunCity Freeroam startup diagnosis::$summary"
 Write-Output $summary

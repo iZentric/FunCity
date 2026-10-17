@@ -1,6 +1,7 @@
 name: Diagnose full Freeroam FunCity Engine
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - arena/f933ec78-funcity
