@@ -48,8 +48,10 @@ jobs:
             Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.json') -Destination $reportDirectory -Force
 
             $pack = $null
+            $projectRoot = Split-Path -Parent $reference
             $skipNames = @('.git', 'assets', 'backups', 'cache', 'crash-reports', 'libraries', 'logs', 'mods', 'plugins', 'saves', 'world', 'world_nether', 'world_the_end')
-            foreach ($searchRoot in @($reference, $destination)) {
+            $searchRoots = @($projectRoot, $reference, $destination) | Select-Object -Unique
+            foreach ($searchRoot in $searchRoots) {
               $queue = [System.Collections.Generic.Queue[string]]::new()
               $queue.Enqueue($searchRoot)
               $visited = 0
