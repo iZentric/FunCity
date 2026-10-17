@@ -1,0 +1,56 @@
+name: Start and test full Freeroam FunCity Engine
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/start-funcity-engine.yml
+      - scripts/start-funcity-engine.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-engine-full-pack-start
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    name: Start on KERNELOS-PC after accepted EULA
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 25
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Re-verify all pack mods before launch
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\verify-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
+
+      - name: Start the full-pack test engine with its portable Java runtime
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\start-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
+
+  verify-persistence:
+    name: Confirm all mods load and the engine survives the Actions job
+    needs: launch
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Verify running process, ready log, and port
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\verify-running-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
