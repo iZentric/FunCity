@@ -6,6 +6,12 @@ param(
 # Read-only check that the detached server survived the GitHub Actions launch job.
 $ErrorActionPreference = 'Stop'
 
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity Lite persistence verification::$failure"
+    throw
+}
+
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }

@@ -82,10 +82,11 @@ if ($pidState -match '^\d+$') {
 $startupState = if ($processState -eq 'running' -and $portState -eq 'open') { 'process-alive+port-open' } elseif ($processState -eq 'running') { 'process-alive+port-closed' } elseif ($portState -eq 'open') { 'port-open-without-tracked-process' } else { 'stopped' }
 
 function Get-SafeLogLines {
-    param([string]$Path, [int]$Limit = 4)
+    param([string]$Path, [int]$Limit = 4, [switch]$TailOnly)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
-    $lines = @(Get-Content -LiteralPath $Path -Tail 120 -ErrorAction SilentlyContinue | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    $important = @($lines | Where-Object { $_ -match '(?i)(ERROR|FATAL|Exception|Caused by:|Unrecognized VM option|Could not find|UnsupportedClassVersion|Done \()' } | Select-Object -Last $Limit)
+    $lines = @(Get-Content -LiteralPath $Path -Tail 500 -ErrorAction SilentlyContinue | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($TailOnly) { $important = @($lines | Select-Object -Last $Limit) }
+    else { $important = @($lines | Where-Object { $_ -match '(?i)(ERROR|FATAL|Exception|Caused by:|Unrecognized VM option|Could not find|UnsupportedClassVersion|Done \()' } | Select-Object -Last $Limit) }
     if ($important.Count -eq 0) { $important = @($lines | Select-Object -Last $Limit) }
     return @($important | ForEach-Object {
         $safe = [string]$_
@@ -106,9 +107,12 @@ $failureLines = @()
 if ($stderrFiles.Count -gt 0) { $failureLines += Get-SafeLogLines -Path $stderrFiles[0].FullName -Limit 3 }
 if (Test-Path -LiteralPath $latestLog -PathType Leaf) { $failureLines += Get-SafeLogLines -Path $latestLog -Limit 5 }
 if ($failureLines.Count -eq 0 -and $stdoutFiles.Count -gt 0) { $failureLines += Get-SafeLogLines -Path $stdoutFiles[0].FullName -Limit 3 }
-$failureSummary = if ($failureLines.Count -gt 0) { ($failureLines -join ' | ') } else { 'no startup log details yet' }
-if ($failureSummary.Length -gt 1500) { $failureSummary = $failureSummary.Substring(0, 1500) }
+$failureSummary = if ($failureLines.Count -gt 0) { ($failureLines -join ' | ') } else { 'no error details found' }
+$latestTailLines = @(Get-SafeLogLines -Path $latestLog -Limit 7 -TailOnly)
+$latestTail = if ($latestTailLines.Count -gt 0) { ($latestTailLines -join ' | ') } else { 'latest log unavailable or empty' }
+$startupSummary = "signals=$failureSummary; latest-tail=$latestTail"
+if ($startupSummary.Length -gt 2400) { $startupSummary = $startupSummary.Substring(0, 2400) }
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$failureSummary"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
