@@ -1,0 +1,55 @@
+name: Start FunCity Lite server
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - scripts/start-funcity-lite.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-lite-pc-operations
+  cancel-in-progress: false
+
+jobs:
+  launch-server:
+    name: Start on KERNELOS-PC after owner EULA acceptance
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 20
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Start the accepted FunCity Lite server
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $startArgs = @{
+            ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          }
+          & .\scripts\start-funcity-lite.ps1 @startArgs
+
+  verify-persistence:
+    name: Verify the server survives the Actions launch job
+    needs: launch-server
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Verify process, ready log, and local port
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verifyArgs = @{
+            ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          }
+          & .\scripts\verify-running-funcity-lite.ps1 @verifyArgs
