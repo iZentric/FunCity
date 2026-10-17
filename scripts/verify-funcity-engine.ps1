@@ -6,6 +6,12 @@ param(
 # Read-only structural check for the isolated full-pack test engine.
 $ErrorActionPreference = 'Stop'
 
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity full-pack verification::$failure"
+    throw
+}
+
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
