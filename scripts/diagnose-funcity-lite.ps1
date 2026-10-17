@@ -41,12 +41,17 @@ $javaCommand = Get-Command -Name java -CommandType Application -ErrorAction Sile
 $javaVersion = if ($null -ne $javaCommand) { 'system Java found on PATH' } else { 'not found on PATH' }
 $localJava = Join-Path $root.FullName 'runtime\bin\java.exe'
 $localJavaVersion = 'not installed'
+$localJavaCompatibility = 'not verified'
 if (Test-Path -LiteralPath $localJava -PathType Leaf) {
     $versionNote = Join-Path $root.FullName 'runtime\JAVA-VERSION.txt'
-    if (Test-Path -LiteralPath $versionNote -PathType Leaf) { $localJavaVersion = (Get-Content -LiteralPath $versionNote -TotalCount 1).Trim() }
+    if (Test-Path -LiteralPath $versionNote -PathType Leaf) {
+        $localJavaNote = Get-Content -LiteralPath $versionNote -Raw
+        $localJavaVersion = ($localJavaNote -split "`r?`n" | Select-Object -First 1).Trim()
+        $localJavaCompatibility = if ($localJavaNote -match 'Temurin JRE 11\.0\.32\.1' -and $localJavaNote -match 'SHA-256 verified') { 'verified for this Mohist build' } else { 'wrong or unverified version' }
+    }
     else { $localJavaVersion = 'local runtime files present' }
 }
-$stagingDirs = @(Get-ChildItem -LiteralPath $root.FullName -Directory -Force -Filter '.java-runtime-staging-*' -ErrorAction SilentlyContinue)
+$stagingDirs = @(Get-ChildItem -LiteralPath $root.FullName -Directory -Force -Filter '.java*-runtime-staging-*' -ErrorAction SilentlyContinue)
 
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
 $plugins = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'plugins') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
@@ -94,6 +99,6 @@ if ($failureLines.Count -eq 0 -and $stdoutFiles.Count -gt 0) { $failureLines += 
 $failureSummary = if ($failureLines.Count -gt 0) { ($failureLines -join ' | ') } else { 'no startup log details yet' }
 if ($failureSummary.Length -gt 1500) { $failureSummary = $failureSummary.Substring(0, 1500) }
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion; java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState; startup=$failureSummary"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState; startup=$failureSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
