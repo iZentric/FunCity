@@ -1,0 +1,33 @@
+name: Inspect Freeroam full-engine requirements
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/inspect-funcity-engine.yml
+      - scripts/inspect-funcity-engine.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-engine-inspect
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Read-only pack and PC preflight on KERNELOS-PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Inspect only the requested pack and engine resources
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\inspect-funcity-engine.ps1
