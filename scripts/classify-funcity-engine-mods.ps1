@@ -7,6 +7,7 @@ param(
 # Minecraft client classes out of the dedicated server's active mods/ folder.
 # This script never deletes a mod and refuses to edit a running test instance.
 $ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
 trap {
     $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
