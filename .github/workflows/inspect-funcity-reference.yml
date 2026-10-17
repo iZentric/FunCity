@@ -1,0 +1,84 @@
+name: Inspect FunCity reference server
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/inspect-funcity-reference.yml
+      - scripts/inspect-funcity-reference.ps1
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-reference:
+    name: Read-only inventory on KERNELOS-PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 30
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Inventory the two requested folders
+        id: scan
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $reference = 'E:\Administrator\Desktop\FunCity\servere referinta'
+          $destination = 'E:\Administrator\Desktop\FunCity\FunCity server'
+          $reportDirectory = Join-Path $env:GITHUB_WORKSPACE 'runner-report'
+          New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
+          $failed = $false
+
+          try {
+            if (-not (Test-Path -LiteralPath $reference -PathType Container)) {
+              throw "Runner cannot access the reference folder: $reference"
+            }
+            if (-not (Test-Path -LiteralPath $destination -PathType Container)) {
+              New-Item -ItemType Directory -Path $destination -Force | Out-Null
+            }
+
+            & .\scripts\inspect-funcity-reference.ps1 -ReferencePath $reference -DestinationPath $destination
+            Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.txt') -Destination $reportDirectory -Force
+            Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.json') -Destination $reportDirectory -Force
+            Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value 'Inventory completed. Only names and recognized manifests were read; no server or mod jar was executed.' -Encoding UTF8
+          }
+          catch {
+            $failed = $true
+            $safeMessage = 'Inventory could not be completed: ' + $_.Exception.Message
+            Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value $safeMessage -Encoding UTF8
+            Write-Host $safeMessage
+          }
+
+          "scan_failed=$($failed.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Publish the small inventory report to this branch
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path -LiteralPath 'runner-report' -PathType Container)) {
+            Write-Host 'No runner report was produced.'
+            exit 0
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- runner-report/
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m 'Add local reference server inventory'
+            git push origin "HEAD:$env:GITHUB_REF_NAME"
+          }
+          elseif ($LASTEXITCODE -ne 0) {
+            throw 'Could not inspect staged inventory changes.'
+          }
+
+      - name: Mark an inaccessible folder as a failed scan
+        if: steps.scan.outputs.scan_failed == 'true'
+        shell: powershell
+        run: |
+          throw 'The runner could not scan the requested folders. See runner-report/status.txt on this branch.'
