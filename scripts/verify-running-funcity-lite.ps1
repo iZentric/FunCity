@@ -3,7 +3,7 @@ param(
     [string]$ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
 )
 
-# Read-only check that the detached server survived the GitHub Actions launch job.
+# Read-only check that the task-managed server survived the GitHub Actions launch job.
 $ErrorActionPreference = 'Stop'
 
 trap {
@@ -44,12 +44,17 @@ $javaVersionNotePath = Join-Path $root.FullName 'runtime\JAVA-VERSION.txt'
 Assert-Condition -Condition (Test-Path -LiteralPath $javaVersionNotePath -PathType Leaf) -Message 'The local Java runtime verification marker is missing.'
 $javaVersionNote = Get-Content -LiteralPath $javaVersionNotePath -Raw
 Assert-Condition -Condition ($javaVersionNote -match 'Temurin JRE 11\.0\.32\.1' -and $javaVersionNote -match 'SHA-256 verified') -Message 'The server-local Java runtime is not the checksum-verified Temurin JRE 11.0.32.1.'
+$serverTaskName = 'FunCity-Lite-Mohist-Server'
+$serverTask = Get-ScheduledTask -TaskName $serverTaskName -ErrorAction SilentlyContinue
+Assert-Condition -Condition ($null -ne $serverTask) -Message 'The manual-only FunCity server task is missing.'
+Assert-Condition -Condition ($serverTask.Description -match '^Managed by FunCity Lite;') -Message 'The scheduled task does not have the expected FunCity Lite ownership marker.'
+Assert-Condition -Condition ($serverTask.State -eq 'Running') -Message 'The FunCity Lite scheduled task is not running.'
 
 $pidPath = Join-Path $root.FullName 'server.pid'
 Assert-Condition -Condition (Test-Path -LiteralPath $pidPath -PathType Leaf) -Message 'server.pid is missing.'
 $serverPid = [int](Get-Content -LiteralPath $pidPath -Raw).Trim()
 $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $serverPid" -ErrorAction SilentlyContinue
-Assert-Condition -Condition ($null -ne $processInfo -and $processInfo.Name -match '^java\.exe$') -Message 'The recorded Java server process is not running.'
+Assert-Condition -Condition ($null -ne $processInfo -and $processInfo.Name -match '^javaw?\.exe$') -Message 'The recorded Java server process is not running.'
 Assert-Condition -Condition ($processInfo.CommandLine -match '(?i)-Dfuncity\.instance=FunCity-Lite' -and $processInfo.CommandLine -match '(?i)-jar\s+server\.jar') -Message 'The recorded process is not the FunCity Lite server.'
 
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
@@ -62,6 +67,6 @@ Assert-Condition -Condition (Test-Path -LiteralPath $latestLog -PathType Leaf) -
 $latestLogInfo = Get-Item -LiteralPath $latestLog -ErrorAction Stop
 Assert-Condition -Condition ($latestLogInfo.Length -gt 0) -Message 'logs/latest.log is empty.'
 
-$summary = "Running=true; PID=$serverPid; Java=Temurin JRE 11.0.32.1; port=$port listening locally; startup=process+port ready; log-file=present; EULA=true; logs remain in FunCity-Lite"
+$summary = "Running=true; PID=$serverPid; Java=Temurin JRE 11.0.32.1; Task=$serverTaskName; port=$port listening locally; startup=process+port ready; log-file=present; EULA=true; logs remain in FunCity-Lite"
 Write-Output "::notice title=FunCity Lite running check::$summary"
 Write-Output $summary
