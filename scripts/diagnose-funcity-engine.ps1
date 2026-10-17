@@ -44,16 +44,15 @@ $portLine = $properties | Where-Object { $_ -match '^\s*server-port\s*=' } | Sel
 $port = if ($null -eq $portLine) { 25566 } else { [int](($portLine -replace '^\s*server-port\s*=\s*', '').Trim()) }
 $portState = if (Test-LocalTcpPort -Port $port) { 'open' } else { 'closed' }
 
-$interesting = [System.Collections.Generic.List[string]]::new()
+$logDetails = [System.Collections.Generic.List[string]]::new()
+$crashDetails = [System.Collections.Generic.List[string]]::new()
 $latest = Join-Path $root.FullName 'logs\latest.log'
 if (Test-Path -LiteralPath $latest -PathType Leaf) {
     $logLines = @(Get-Content -LiteralPath $latest -Tail 600 -ErrorAction SilentlyContinue)
-    foreach ($line in $logLines) {
-        if ($line -match '(?i)(FATAL|ERROR|Exception|Caused by:|NoClassDefFoundError|ClassNotFoundException|wrong side|invalid dist|client class|failed to load|modloadingexception|mixin apply failed|crash report)') {
-            $interesting.Add('latest.log: ' + $line.Trim())
-        }
+    foreach ($line in ($logLines | Where-Object { $_ -match '(?i)(FATAL|ERROR|Exception|Caused by:|NoClassDefFoundError|ClassNotFoundException|wrong side|invalid dist|client class|failed to load|modloadingexception|mixin apply failed|crash report)' } | Select-Object -Last 30)) {
+        $logDetails.Add($line.Trim())
     }
-    foreach ($line in ($logLines | Select-Object -Last 35)) { $interesting.Add('tail: ' + $line.Trim()) }
+    foreach ($line in ($logLines | Select-Object -Last 15)) { $logDetails.Add('TAIL: ' + $line.Trim()) }
 }
 $crashDirectory = Join-Path $root.FullName 'crash-reports'
 $crashName = 'none'
@@ -63,15 +62,16 @@ if (Test-Path -LiteralPath $crashDirectory -PathType Container) {
         $crashName = $crash.Name
         $crashLines = @(Get-Content -LiteralPath $crash.FullName -ErrorAction SilentlyContinue)
         foreach ($line in $crashLines) {
-            if ($line -match '(?i)(Description:|Failure message:|Mod File:|Exception|Caused by:|NoClassDefFoundError|ClassNotFoundException|wrong side|invalid dist|client class|Suspected Mods:|Mod List:)') {
-                $interesting.Add('crash-report: ' + $line.Trim())
+            if ($line -match '(?i)(Description:|Failure message:|Mod File:|Exception|Caused by:|NoClassDefFoundError|ClassNotFoundException|wrong side|invalid dist|client class|Suspected Mods:|Mod List:|-- MOD )') {
+                $crashDetails.Add($line.Trim())
             }
         }
-        foreach ($line in ($crashLines | Select-Object -Last 45)) { $interesting.Add('crash-tail: ' + $line.Trim()) }
+        foreach ($line in ($crashLines | Select-Object -Last 30)) { $crashDetails.Add('CRASH-TAIL: ' + $line.Trim()) }
     }
 }
-$uniqueLines = @($interesting | Select-Object -Unique)
-$details = $uniqueLines -join ' | '
+$logSummary = (@($logDetails | Select-Object -Unique) -join ' | ')
+$crashSummary = (@($crashDetails | Select-Object -Unique) -join ' | ')
+$details = "CRASH-REPORT: $crashSummary || LATEST-LOG: $logSummary"
 if ($details.Length -gt 9000) { $details = $details.Substring(0, 9000) }
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
 $logTimestamp = if (Test-Path -LiteralPath $latest -PathType Leaf) { (Get-Item -LiteralPath $latest).LastWriteTime.ToString('s') } else { 'missing' }
