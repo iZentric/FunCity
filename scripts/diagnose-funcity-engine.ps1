@@ -83,9 +83,9 @@ if (Test-Path -LiteralPath $crashDirectory -PathType Container) {
     }
 }
 $logSummary = (@($logDetails | Select-Object -Unique) -join ' | ')
+if ($logSummary.Length -gt 3000) { $logSummary = $logSummary.Substring($logSummary.Length - 3000) }
 $crashSummary = (@($crashDetails | Select-Object -Unique) -join ' | ')
-$details = "CRASH-REPORT: $crashSummary || LATEST-LOG: $logSummary"
-if ($details.Length -gt 9000) { $details = $details.Substring(0, 9000) }
+if ($crashSummary.Length -gt 2400) { $crashSummary = $crashSummary.Substring(0, 2400) }
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
 $logTimestamp = 'missing'
 $logLength = 0
@@ -94,6 +94,10 @@ if (Test-Path -LiteralPath $latest -PathType Leaf) {
     $logTimestamp = $logInfo.LastWriteTime.ToString('s')
     $logLength = $logInfo.Length
 }
-$summary = "Task=$($task.State); $taskRunInfo; PID-file=$pidValue; process=$processSummary; port=$port/$portState; mods=$($mods.Count)/$($inventory.sourceModJarCount); EULA=$([bool]($eula -match '(?im)^\s*eula\s*=\s*true\s*$')); latest-log=$logTimestamp/$logLength-bytes; Done-markers-in-tail=$doneMarkerCount; crash-report=$crashName; diagnostics=$details"
-Write-Output "::notice title=FunCity Freeroam startup diagnosis::$summary"
+$summary = "Task=$($task.State); $taskRunInfo; PID-file=$pidValue; process=$processSummary; port=$port/$portState; mods=$($mods.Count)/$($inventory.sourceModJarCount); EULA=$([bool]($eula -match '(?im)^\s*eula\s*=\s*true\s*$')); latest-log=$logTimestamp/$logLength-bytes; Done-markers-in-tail=$doneMarkerCount; crash-report=$crashName"
+Write-Output "::notice title=FunCity Freeroam startup state::$summary"
+Write-Output "::notice title=FunCity latest server log tail::$logSummary"
+Write-Output "::notice title=FunCity newest crash report::$crashSummary"
 Write-Output $summary
+Write-Output "LATEST-LOG: $logSummary"
+Write-Output "CRASH-REPORT: $crashSummary"
