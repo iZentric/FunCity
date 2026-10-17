@@ -70,6 +70,7 @@ if ($pidState -match '^\d+$') {
     $trackedProcess = Get-Process -Id ([int]$pidState) -ErrorAction SilentlyContinue
     $processState = if ($null -ne $trackedProcess) { 'running' } else { 'exited' }
 }
+$startupState = if ($processState -eq 'running' -and $portState -eq 'open') { 'process-alive+port-open' } elseif ($processState -eq 'running') { 'process-alive+port-closed' } elseif ($portState -eq 'open') { 'port-open-without-tracked-process' } else { 'stopped' }
 
 function Get-SafeLogLines {
     param([string]$Path, [int]$Limit = 4)
@@ -99,6 +100,6 @@ if ($failureLines.Count -eq 0 -and $stdoutFiles.Count -gt 0) { $failureLines += 
 $failureSummary = if ($failureLines.Count -gt 0) { ($failureLines -join ' | ') } else { 'no startup log details yet' }
 if ($failureSummary.Length -gt 1500) { $failureSummary = $failureSummary.Substring(0, 1500) }
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState; startup=$failureSummary"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState; startup-state=$startupState; startup=$failureSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
