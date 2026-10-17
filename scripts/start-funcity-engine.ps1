@@ -86,9 +86,12 @@ Assert-Condition -Condition $root.PSIsContainer -Message 'Full-pack FunCity Engi
 $required = @('server.jar', 'server.properties', 'eula.txt', 'start.bat', 'BUILD-REPORT.txt', 'README-FUNCITY-ENGINE.txt', 'pack-mod-inventory.json', 'runtime\JAVA-VERSION.txt', 'runtime\bin\java.exe', 'runtime\bin\javaw.exe')
 foreach ($relative in $required) { Assert-Condition -Condition (Test-Path -LiteralPath (Join-Path $root.FullName $relative) -PathType Leaf) -Message "Required engine file is missing: $relative" }
 $inventory = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $root.FullName 'pack-mod-inventory.json') -Raw) -ErrorAction Stop
-$expectedModCount = [int]$inventory.sourceModJarCount
+$expectedTotal = [int]$inventory.sourceModJarCount
+$expectedServer = [int]$inventory.serverModJarCount
+$expectedClientOnly = [int]$inventory.clientOnlyModJarCount
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction Stop)
-Assert-Condition -Condition ($mods.Count -eq $expectedModCount -and $expectedModCount -eq @($inventory.mods).Count) -Message "Full pack mod count changed: mods/=$($mods.Count); inventory=$expectedModCount."
+$clientMods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'client-only-mods') -File -Filter '*.jar' -ErrorAction Stop)
+Assert-Condition -Condition ($mods.Count -eq $expectedServer -and $clientMods.Count -eq $expectedClientOnly -and $mods.Count + $clientMods.Count -eq $expectedTotal -and $expectedTotal -eq @($inventory.mods).Count) -Message "Full pack mod count changed: server=$($mods.Count)/$expectedServer; client-only=$($clientMods.Count)/$expectedClientOnly; total=$expectedTotal."
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
 Assert-Condition -Condition ($eula -match '(?im)^\s*eula\s*=\s*true\s*$') -Message 'The accepted EULA setting is not true; server was not started.'
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
@@ -114,7 +117,7 @@ if ($portOpen) {
     Assert-Condition -Condition ($null -ne $task -and $task.Description -like 'Managed by FunCity Freeroam Engine;*' -and $task.State -eq 'Running') -Message 'The current Freeroam process is not owned by the expected running manual-only task.'
     $serverPid = [int]$existingProcess.ProcessId
     Set-Content -LiteralPath (Join-Path $root.FullName 'server.pid') -Value $serverPid -Encoding ASCII
-    $summary = "Server=already-running; PID=$serverPid; port=$port; mods=$($mods.Count); Task=$taskName; Java=Temurin-11.0.32.1"
+    $summary = "Server=already-running; PID=$serverPid; port=$port; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly; Task=$taskName; Java=Temurin-11.0.32.1"
     Write-Output "::notice title=FunCity full-pack engine start::$summary"
     Write-Output $summary
     return
@@ -211,12 +214,12 @@ if (-not $ready) {
 $runningTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
 Assert-Condition -Condition ($runningTask.State -eq 'Running' -and $runningTask.Triggers.Count -eq 0) -Message 'The manual-only task is not running or has an unexpected automatic trigger.'
 $reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Server process management:' })
-$reportLines += "Server status: running; PID $serverPid; port $port; all $($mods.Count) pack mods loaded in the test folder."
+$reportLines += "Server status: running; PID $serverPid; port $port; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly."
 $reportLines += 'Server process management: manual-only Windows Scheduled Task ' + $taskName + ' (no logon or reboot trigger).'
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
 $logTail = Get-RecentStartupLog -ServerRoot $root.FullName
 if ($logTail.Length -gt 1200) { $logTail = $logTail.Substring($logTail.Length - 1200) }
-$summary = "Server=ready; PID=$serverPid; Mohist=1.16.5-1242; Forge=36.2.42; mods=$($mods.Count); Java=portable-Temurin-11.0.32.1; port=$port; EULA=true; Task=$taskName/Running/manual-only; startup-log=$logTail"
+$summary = "Server=ready; PID=$serverPid; Mohist=1.16.5-1242; Forge=36.2.42; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly; Java=portable-Temurin-11.0.32.1; port=$port; EULA=true; Task=$taskName/Running/manual-only; startup-log=$logTail"
 Write-Output "::notice title=FunCity full-pack engine started::$summary"
 Write-Output $summary

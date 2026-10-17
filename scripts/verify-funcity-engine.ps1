@@ -48,18 +48,29 @@ Assert-Condition -Condition ($engineManifest -match '(?m)^Implementation-Title: 
 $inventoryPath = Join-Path $root.FullName 'pack-mod-inventory.json'
 $inventory = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $inventoryPath -Raw) -ErrorAction Stop
 $inventoryMods = @($inventory.mods)
-$expectedCount = [int]$inventory.sourceModJarCount
+$expectedTotal = [int]$inventory.sourceModJarCount
+$expectedServer = [int]$inventory.serverModJarCount
+$expectedClientOnly = [int]$inventory.clientOnlyModJarCount
 Assert-Condition -Condition ($inventory.pack -eq 'Freeroam 1.0.0.mrpack' -and $inventory.minecraft -eq '1.16.5' -and $inventory.forge -eq '36.2.42') -Message 'The manifest record is not the requested Freeroam 1.0.0 Forge 1.16.5 pack.'
-Assert-Condition -Condition ($inventoryMods.Count -eq $expectedCount -and $expectedCount -gt 0) -Message "Pack inventory contains $($inventoryMods.Count) records, expected $expectedCount."
+Assert-Condition -Condition ($inventoryMods.Count -eq $expectedTotal -and $expectedTotal -gt 0 -and $expectedServer + $expectedClientOnly -eq $expectedTotal) -Message "Pack inventory counts are inconsistent: all=$($inventoryMods.Count); server=$expectedServer; client-only=$expectedClientOnly."
 $modsDirectory = Join-Path $root.FullName 'mods'
+$clientModsDirectory = Join-Path $root.FullName 'client-only-mods'
 $modFiles = @(Get-ChildItem -LiteralPath $modsDirectory -File -Filter '*.jar' -ErrorAction Stop)
-Assert-Condition -Condition ($modFiles.Count -eq $expectedCount) -Message "Not all pack mod JARs are active in mods/: found $($modFiles.Count), expected $expectedCount."
+$clientFiles = @(Get-ChildItem -LiteralPath $clientModsDirectory -File -Filter '*.jar' -ErrorAction Stop)
+Assert-Condition -Condition ($modFiles.Count -eq $expectedServer) -Message "Server-compatible mods/ count is $($modFiles.Count), expected $expectedServer."
+Assert-Condition -Condition ($clientFiles.Count -eq $expectedClientOnly -and $modFiles.Count + $clientFiles.Count -eq $expectedTotal) -Message "Pack JARs were not all retained: server=$($modFiles.Count), client-only=$($clientFiles.Count), total=$expectedTotal."
 foreach ($record in $inventoryMods) {
     $path = Join-Path $root.FullName ([string]$record.relativeDestination)
     Assert-Condition -Condition (Test-Path -LiteralPath $path -PathType Leaf) -Message "Pack mod was not staged: $($record.packPath)"
     Assert-Condition -Condition (Test-ReadableJar -Path $path) -Message "Pack mod is not a readable JAR: $($record.file)"
     $actualSha = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-Condition -Condition ($actualSha -eq ([string]$record.sha256).ToLowerInvariant()) -Message "Staged mod checksum does not match the build inventory: $($record.file)"
+    if ($record.loadOnServer) {
+        Assert-Condition -Condition ([string]$record.relativeDestination -like 'mods/*') -Message "A server mod is outside the active mods/ folder: $($record.file)"
+    }
+    else {
+        Assert-Condition -Condition ([string]$record.relativeDestination -like 'client-only-mods/*') -Message "A client-only mod was not kept outside the active mods/ folder: $($record.file)"
+    }
 }
 
 $eula = Get-Content -LiteralPath (Join-Path $root.FullName 'eula.txt') -Raw
@@ -83,6 +94,6 @@ $pluginsDirectory = Join-Path $root.FullName 'plugins'
 $extraPlugins = if (Test-Path -LiteralPath $pluginsDirectory -PathType Container) { @(Get-ChildItem -LiteralPath $pluginsDirectory -File -Filter '*.jar') } else { @() }
 Assert-Condition -Condition ($extraPlugins.Count -eq 0) -Message 'The isolated modpack test must not add extra plugins.'
 
-$summary = "Engine=verified; Mohist=1.16.5-1242; Forge=36.2.42; pack=Freeroam-1.0.0; active-mods=$($modFiles.Count)/$expectedCount checksummed; port=$port; Java=portable-Temurin-11.0.32.1; EULA=true; extra-plugins=0; server-not-started-by-this-check=true"
+$summary = "Engine=verified; Mohist=1.16.5-1242; Forge=36.2.42; pack=Freeroam-1.0.0; server-loaded=$($modFiles.Count)/$expectedServer; client-only-preserved=$($clientFiles.Count)/$expectedClientOnly; all-pack-mods=$expectedTotal checksummed; port=$port; Java=portable-Temurin-11.0.32.1; EULA=true; extra-plugins=0; server-not-started-by-this-check=true"
 Write-Output "::notice title=FunCity full-pack engine verification::$summary"
 Write-Output $summary

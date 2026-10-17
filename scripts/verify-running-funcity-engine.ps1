@@ -58,9 +58,12 @@ Assert-Condition -Condition ($port -eq 25566) -Message "Unexpected full-pack tes
 Assert-Condition -Condition (Test-LocalTcpPort -Port $port) -Message "Full-pack server is not accepting local TCP connections on port $port."
 
 $inventory = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path $root.FullName 'pack-mod-inventory.json') -Raw) -ErrorAction Stop
-$expectedMods = [int]$inventory.sourceModJarCount
+$expectedTotal = [int]$inventory.sourceModJarCount
+$expectedServer = [int]$inventory.serverModJarCount
+$expectedClientOnly = [int]$inventory.clientOnlyModJarCount
 $modFiles = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction Stop)
-Assert-Condition -Condition ($modFiles.Count -eq $expectedMods -and $expectedMods -eq @($inventory.mods).Count) -Message "Active mod count changed: found $($modFiles.Count), expected $expectedMods."
+$clientFiles = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'client-only-mods') -File -Filter '*.jar' -ErrorAction Stop)
+Assert-Condition -Condition ($modFiles.Count -eq $expectedServer -and $clientFiles.Count -eq $expectedClientOnly -and $modFiles.Count + $clientFiles.Count -eq $expectedTotal -and $expectedTotal -eq @($inventory.mods).Count) -Message "Mod inventory changed: server=$($modFiles.Count)/$expectedServer; client-only=$($clientFiles.Count)/$expectedClientOnly; total=$expectedTotal."
 
 $latestLog = Join-Path $root.FullName 'logs\latest.log'
 Assert-Condition -Condition (Test-Path -LiteralPath $latestLog -PathType Leaf) -Message 'logs/latest.log is missing after the test server launch.'
@@ -73,6 +76,6 @@ Assert-Condition -Condition ($null -ne $readyLine) -Message ('Server process/por
 $errors = @($tail | Where-Object { $_ -match '(?i)\b(ERROR|FATAL|Exception|NoClassDefFoundError|ClassNotFoundException|Mixin apply failed)\b' })
 $errorSummary = if ($errors.Count -eq 0) { 'none in recent log tail' } else { ($errors | Select-Object -Last 8) -join ' | ' }
 if ($errorSummary.Length -gt 1800) { $errorSummary = $errorSummary.Substring($errorSummary.Length - 1800) }
-$summary = "Running=true; PID=$serverPid; Task=$taskName/Running/manual-only; port=$port/open-locally; mods=$($modFiles.Count)/$expectedMods; Java=portable-Temurin-11.0.32.1; ready=$readyLine; recent-errors=$errorSummary"
+$summary = "Running=true; PID=$serverPid; Task=$taskName/Running/manual-only; port=$port/open-locally; server-loaded-mods=$($modFiles.Count)/$expectedServer; client-only-preserved=$($clientFiles.Count)/$expectedClientOnly; all-pack-mods=$expectedTotal; Java=portable-Temurin-11.0.32.1; ready=$readyLine; recent-errors=$errorSummary"
 Write-Output "::notice title=FunCity full-pack engine persistence check::$summary"
 Write-Output $summary
