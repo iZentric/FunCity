@@ -278,11 +278,15 @@ try {
 @echo off
 setlocal
 cd /d "%~dp0"
-where java >nul 2>&1
-if errorlevel 1 (
-  echo Java 8 or newer was not found on PATH. Install a 64-bit Java runtime, then retry.
-  pause
-  exit /b 1
+set "JAVA_EXE=%~dp0runtime\bin\java.exe"
+if not exist "%JAVA_EXE%" (
+  where java >nul 2>&1
+  if errorlevel 1 (
+    echo Bundled Java 8 or a system Java runtime was not found.
+    pause
+    exit /b 1
+  )
+  set "JAVA_EXE=java"
 )
 findstr /i /x /c:"eula=true" eula.txt >nul
 if errorlevel 1 (
@@ -290,7 +294,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-java -Xms2G -Xmx4G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -jar server.jar nogui
+"%JAVA_EXE%" -Xms2G -Xmx4G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -jar server.jar nogui
 pause
 '@
     Set-Content -LiteralPath (Join-Path $stagingPath 'start.bat') -Value $startBat -Encoding ASCII
@@ -314,7 +318,7 @@ pause
         foreach ($name in $missingPlugins) { $readme.Add('  ' + $name) }
     }
     $readme.Add('')
-    $readme.Add('Performance baseline: FerriteCore and ModernFix are included by the pack; view-distance is 6; start.bat uses a 2-4 GB G1GC low-pause profile with heap-occupancy tuning. Measure live MSPT with spark after owner-approved startup.')
+    $readme.Add('Performance baseline: FerriteCore and ModernFix are included by the pack; view-distance is 6; start.bat uses the local runtime when present and a 2-4 GB G1GC low-pause profile with heap-occupancy tuning. Measure live MSPT with spark after owner-approved startup.')
     $readme.Add('No world, logs, old configs, account data, or old plugin configs were copied.')
     $readme.Add('EULA is deliberately false. Set eula=true yourself only after reading and accepting the Minecraft EULA.')
     $readme.Add('No firewall rules or router port forwarding were changed.')

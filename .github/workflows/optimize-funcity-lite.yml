@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: funcity-lite-pc-operations
+  group: funcity-lite-optimize
   cancel-in-progress: false
 
 jobs:

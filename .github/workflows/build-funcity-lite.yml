@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: funcity-lite-pc-operations
+  group: funcity-lite-build
   cancel-in-progress: false
 
 jobs:
