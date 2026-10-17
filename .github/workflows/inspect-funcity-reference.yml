@@ -9,7 +9,7 @@ on:
       - scripts/inspect-funcity-reference.ps1
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   inspect-reference:
@@ -55,27 +55,14 @@ jobs:
 
           "scan_failed=$($failed.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - name: Publish the small inventory report to this branch
+      - name: Upload the small inventory report
         if: always()
-        shell: powershell
-        run: |
-          $ErrorActionPreference = 'Stop'
-          if (-not (Test-Path -LiteralPath 'runner-report' -PathType Container)) {
-            Write-Host 'No runner report was produced.'
-            exit 0
-          }
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- runner-report/
-          git diff --cached --quiet
-          if ($LASTEXITCODE -eq 1) {
-            git commit -m 'Add local reference server inventory'
-            git push origin "HEAD:$env:GITHUB_REF_NAME"
-          }
-          elseif ($LASTEXITCODE -ne 0) {
-            throw 'Could not inspect staged inventory changes.'
-          }
+        uses: actions/upload-artifact@v4
+        with:
+          name: funcity-reference-inventory
+          path: runner-report/*
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Mark an inaccessible folder as a failed scan
         if: steps.scan.outputs.scan_failed == 'true'
