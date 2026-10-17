@@ -82,6 +82,9 @@ $startText = [System.IO.File]::ReadAllText((Join-Path $root.FullName 'start.bat'
 $gate = if ($startText -match '(?im)^findstr /i /x /c:"eula=true" eula\.txt >nul\s*$') { 'valid' } else { 'missing' }
 $javaLine = @($startText -split "`r?`n" | Where-Object { $_ -match '^\s*(?:java|"%JAVA_EXE%")\s+-Xms' })
 $tuning = if ($javaLine.Count -eq 1 -and $javaLine[0] -match 'G1NewSizePercent=30.*G1MaxNewSizePercent=40.*G1RSetUpdatingPauseTimePercent=5') { 'tuned' } else { 'baseline-or-unknown' }
+$localJavaLauncher = $startText -match '(?im)^set "JAVA_EXE=%~dp0runtime\\bin\\java\.exe"\s*$'
+$systemJavaFallback = $startText -match '(?im)^\s*where java >nul 2>&1\s*$' -or $startText -match '(?im)^\s*set "JAVA_EXE=java"\s*$'
+$javaLauncherPolicy = if ($localJavaLauncher -and -not $systemJavaFallback) { 'portable-only' } else { 'fallback-or-unknown' }
 $pidFile = Join-Path $root.FullName 'server.pid'
 $pidState = if (Test-Path -LiteralPath $pidFile) { (Get-Content -LiteralPath $pidFile -Raw).Trim() } else { 'none' }
 $processState = 'not-started'
@@ -132,7 +135,7 @@ $latestTail = if ($latestTailLines.Count -gt 0) { ($latestTailLines -join ' | ')
 $startupSummary = "signals=$failureSummary; latest-tail=$latestTail"
 if ($startupSummary.Length -gt 2400) { $startupSummary = $startupSummary.Substring(0, 2400) }
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); TaskScheduler=$taskSupport/$managedTaskState/$taskDefinitionSupport; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); TaskScheduler=$taskSupport/$managedTaskState/$taskDefinitionSupport; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; Java-launcher=$javaLauncherPolicy; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output "::notice title=FunCity Lite task scheduler preflight::TaskScheduler=$taskSupport; managed-task=$managedTaskState; task-definition=$taskDefinitionSupport"
 Write-Output $summary
