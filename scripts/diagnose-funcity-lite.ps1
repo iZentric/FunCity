@@ -45,6 +45,13 @@ if ($null -ne $javaCommand) {
     $versionOutput = @(& $javaPath -version 2>&1)
     if ($versionOutput.Count -gt 0) { $javaVersion = (($versionOutput[0].ToString()) -replace '[\r\n]+', ' ').Trim() }
 }
+$localJava = Join-Path $root.FullName 'runtime\bin\java.exe'
+$localJavaVersion = 'not installed'
+if (Test-Path -LiteralPath $localJava -PathType Leaf) {
+    $localVersionOutput = @(& $localJava -version 2>&1)
+    if ($localVersionOutput.Count -gt 0) { $localJavaVersion = (($localVersionOutput[0].ToString()) -replace '[\r\n]+', ' ').Trim() }
+}
+$stagingDirs = @(Get-ChildItem -LiteralPath $root.FullName -Directory -Force -Filter '.java-runtime-staging-*' -ErrorAction SilentlyContinue)
 
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
 $plugins = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'plugins') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
@@ -59,6 +66,6 @@ $tuning = if ($javaLine.Count -eq 1 -and $javaLine[0] -match 'G1NewSizePercent=3
 $pidFile = Join-Path $root.FullName 'server.pid'
 $pidState = if (Test-Path -LiteralPath $pidFile) { (Get-Content -LiteralPath $pidFile -Raw).Trim() } else { 'none' }
 
-$summary = "EULA=$eula; Java=$javaVersion; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion; java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
