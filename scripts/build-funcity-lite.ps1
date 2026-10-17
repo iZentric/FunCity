@@ -280,13 +280,9 @@ setlocal
 cd /d "%~dp0"
 set "JAVA_EXE=%~dp0runtime\bin\java.exe"
 if not exist "%JAVA_EXE%" (
-  where java >nul 2>&1
-  if errorlevel 1 (
-    echo Bundled Java 11 or a system Java runtime was not found.
-    pause
-    exit /b 1
-  )
-  set "JAVA_EXE=java"
+  echo Bundled Java 11 runtime was not found.
+  pause
+  exit /b 1
 )
 findstr /i /x /c:"eula=true" eula.txt >nul
 if errorlevel 1 (
@@ -318,7 +314,7 @@ pause
         foreach ($name in $missingPlugins) { $readme.Add('  ' + $name) }
     }
     $readme.Add('')
-    $readme.Add('Performance baseline: FerriteCore and ModernFix are included by the pack; view-distance is 6; start.bat uses the local runtime when present and a 2-4 GB G1GC low-pause profile with heap-occupancy tuning. Measure live MSPT with spark after owner-approved startup.')
+    $readme.Add('Performance baseline: FerriteCore and ModernFix are included by the pack; view-distance is 6; start.bat requires the bundled Temurin JRE 11 runtime and uses a 2-4 GB G1GC low-pause profile with heap-occupancy tuning. Measure live MSPT with spark after owner-approved startup.')
     $readme.Add('No world, logs, old configs, account data, or old plugin configs were copied.')
     $readme.Add('EULA is deliberately false. Set eula=true yourself only after reading and accepting the Minecraft EULA.')
     $readme.Add('No firewall rules or router port forwarding were changed.')

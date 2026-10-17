@@ -59,38 +59,29 @@ $startText = [System.IO.File]::ReadAllText($startPath)
 Assert-Condition -Condition ($startText -match '(?im)^findstr /i /x /c:"eula=true" eula\.txt >nul\s*$') -Message 'The existing EULA gate is missing; refusing to modify start.bat.'
 $lines = @(Get-Content -LiteralPath $startPath)
 
+$javaSetupLine = 'set "JAVA_EXE=%~dp0runtime\bin\java.exe"'
 $javaSetup = @(
-    'set "JAVA_EXE=%~dp0runtime\bin\java.exe"',
+    $javaSetupLine,
     'if not exist "%JAVA_EXE%" (',
-    '  where java >nul 2>&1',
-    '  if errorlevel 1 (',
-    '    echo Bundled Java 11 or a system Java runtime was not found.',
-    '    pause',
-    '    exit /b 1',
-    '  )',
-    '  set "JAVA_EXE=java"',
+    '  echo Bundled Java 11 runtime was not found.',
+    '  pause',
+    '  exit /b 1',
     ')'
 )
-$javaSetupLine = 'set "JAVA_EXE=%~dp0runtime\bin\java.exe"'
 $findstrLine = 'findstr /i /x /c:"eula=true" eula.txt >nul'
 $findstrIndex = [Array]::IndexOf($lines, $findstrLine)
 Assert-Condition -Condition ($findstrIndex -gt 0) -Message 'The EULA gate line could not be located.'
+$setupIndex = [Array]::IndexOf($lines, $javaSetupLine)
+Assert-Condition -Condition ($setupIndex -ge 0 -and $setupIndex -lt $findstrIndex) -Message 'The local Java setup line could not be located before the EULA gate.'
+$setupBlock = @($lines[$setupIndex..($findstrIndex - 1)])
+$expectedSetupText = ($javaSetup -join "`n").TrimEnd()
+$existingSetupText = ($setupBlock -join "`n").TrimEnd()
 $setupChanged = $false
-if ($lines -contains $javaSetupLine) {
-    # Refresh the guidance if a prior build used the previous Java major version.
-    $oldJavaErrorLine = '    echo Bundled Java 8 or a system Java runtime was not found.'
-    $newJavaErrorLine = '    echo Bundled Java 11 or a system Java runtime was not found.'
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -ceq $oldJavaErrorLine) { $lines[$i] = $newJavaErrorLine; $setupChanged = $true }
-    }
-}
-else {
-    $whereIndex = [Array]::IndexOf($lines, 'where java >nul 2>&1')
-    Assert-Condition -Condition ($whereIndex -ge 0 -and $whereIndex -lt $findstrIndex) -Message 'The Java lookup block is unrecognized; refusing to modify start.bat.'
+if ($existingSetupText -cne $expectedSetupText) {
     $prefix = @()
-    if ($whereIndex -gt 0) { $prefix = @($lines[0..($whereIndex - 1)]) }
+    if ($setupIndex -gt 0) { $prefix = @($lines[0..($setupIndex - 1)]) }
     $suffix = @($lines[$findstrIndex..($lines.Count - 1)])
-    $lines = @($prefix) + @($javaSetup) + @($suffix)
+    $lines = @($prefix) + @($javaSetup) + @('') + @($suffix)
     $setupChanged = $true
 }
 
@@ -111,32 +102,35 @@ if ($changed) { Set-Content -LiteralPath $startPath -Value $lines -Encoding ASCI
 
 $startAfter = [System.IO.File]::ReadAllText($startPath)
 Assert-Condition -Condition ($startAfter.Contains($javaSetupLine)) -Message 'Local Java preference did not verify.'
+Assert-Condition -Condition ($startAfter -notmatch '(?im)^\s*where java >nul 2>&1\s*$' -and $startAfter -notmatch '(?im)^\s*set "JAVA_EXE=java"\s*$') -Message 'start.bat still permits a system Java fallback.'
 Assert-Condition -Condition ($startAfter.Contains($tunedLine)) -Message 'The tuned G1GC launch command did not verify.'
 Assert-Condition -Condition ($startAfter -match '(?im)^findstr /i /x /c:"eula=true" eula\.txt >nul\s*$') -Message 'The EULA gate changed unexpectedly.'
 $eulaAfter = [System.IO.File]::ReadAllText($eulaPath)
 Assert-Condition -Condition ($eulaAfter -ceq $eulaBefore) -Message 'eula.txt changed unexpectedly.'
 
 $performanceNote = 'Performance profile: G1GC low-pause tuning for a 2-4 GB heap; view-distance=6; use spark to measure live MSPT after owner-approved startup.'
-$javaNote = 'start.bat prefers the portable runtime\bin\java.exe and falls back to Java on PATH.'
+$oldJavaNote = 'start.bat prefers the portable runtime\bin\java.exe and falls back to Java on PATH.'
+$javaNote = 'start.bat uses only the bundled runtime\bin\java.exe; system Java is not used.'
 $reportPath = Join-Path $root.FullName 'BUILD-REPORT.txt'
-$reportText = [System.IO.File]::ReadAllText($reportPath)
-if (-not $reportText.Contains($performanceNote)) {
-    Add-Content -LiteralPath $reportPath -Value $performanceNote -Encoding UTF8
-}
-$reportText = [System.IO.File]::ReadAllText($reportPath)
-if (-not $reportText.Contains($javaNote)) { Add-Content -LiteralPath $reportPath -Value $javaNote -Encoding UTF8 }
 $readmePath = Join-Path $root.FullName 'README-FUNCITY.txt'
-$readmeText = [System.IO.File]::ReadAllText($readmePath)
-if (-not $readmeText.Contains($performanceNote)) {
-    Add-Content -LiteralPath $readmePath -Value $performanceNote -Encoding UTF8
+foreach ($documentPath in @($reportPath, $readmePath)) {
+    $documentText = [System.IO.File]::ReadAllText($documentPath)
+    $updatedText = $documentText.Replace($oldJavaNote, $javaNote)
+    if (-not $updatedText.Contains($performanceNote)) {
+        $updatedText = $updatedText.TrimEnd() + [Environment]::NewLine + $performanceNote + [Environment]::NewLine
+    }
+    if (-not $updatedText.Contains($javaNote)) {
+        $updatedText = $updatedText.TrimEnd() + [Environment]::NewLine + $javaNote + [Environment]::NewLine
+    }
+    if ($updatedText -cne $documentText) {
+        [System.IO.File]::WriteAllText($documentPath, $updatedText, [System.Text.Encoding]::UTF8)
+    }
 }
-$readmeText = [System.IO.File]::ReadAllText($readmePath)
-if (-not $readmeText.Contains($javaNote)) { Add-Content -LiteralPath $readmePath -Value $javaNote -Encoding UTF8 }
 
 $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.properties')
 $viewDistance = [int](($properties | Where-Object { $_ -match '^\s*view-distance\s*=' } | Select-Object -First 1) -replace '^\s*view-distance\s*=\s*', '')
 Assert-Condition -Condition ($viewDistance -eq 6) -Message "Unexpected view-distance: $viewDistance"
 $changeState = if ($changed) { 'applied' } else { 'already applied; no duplicate edits' }
-$summary = "G1GC low-pause profile=$changeState; Java=portable-first; heap=2-4 GB; view-distance=6; mods=9; plugins=8; EULA=$eulaState; server=not started"
+$summary = "G1GC low-pause profile=$changeState; Java=portable-only; heap=2-4 GB; view-distance=6; mods=9; plugins=8; EULA=$eulaState; server=not started"
 Write-Output "::notice title=FunCity Lite PC optimization::$summary"
 Write-Output $summary
