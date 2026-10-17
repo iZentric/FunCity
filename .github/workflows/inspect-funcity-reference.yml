@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/inspect-funcity-reference.yml
       - scripts/inspect-funcity-reference.ps1
+      - scripts/inspect-mrpack.ps1
 
 permissions:
   actions: write
@@ -45,12 +46,46 @@ jobs:
             & .\scripts\inspect-funcity-reference.ps1 -ReferencePath $reference -DestinationPath $destination
             Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.txt') -Destination $reportDirectory -Force
             Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.json') -Destination $reportDirectory -Force
-            Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value 'Inventory completed. Only names and recognized manifests were read; no server or mod jar was executed.' -Encoding UTF8
+
+            $pack = $null
+            $skipNames = @('.git', 'assets', 'backups', 'cache', 'crash-reports', 'libraries', 'logs', 'mods', 'plugins', 'saves', 'world', 'world_nether', 'world_the_end')
+            foreach ($searchRoot in @($reference, $destination)) {
+              $queue = [System.Collections.Generic.Queue[string]]::new()
+              $queue.Enqueue($searchRoot)
+              $visited = 0
+              while ($queue.Count -gt 0 -and $visited -lt 5000 -and $null -eq $pack) {
+                $current = $queue.Dequeue()
+                $visited++
+                $match = Get-ChildItem -LiteralPath $current -File -Filter 'Freeroam 1.0.0.mrpack' -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($null -ne $match) {
+                  $pack = $match
+                  break
+                }
+                $children = Get-ChildItem -LiteralPath $current -Directory -Force -ErrorAction SilentlyContinue
+                foreach ($child in $children) {
+                  if ($skipNames -notcontains $child.Name) { $queue.Enqueue($child.FullName) }
+                }
+              }
+              if ($null -ne $pack) { break }
+            }
+            if ($null -eq $pack) {
+              throw 'Freeroam 1.0.0.mrpack was not found under either supplied folder.'
+            }
+
+            & .\scripts\inspect-mrpack.ps1 -PackPath $pack.FullName -OutputDirectory $destination
+            Copy-Item -LiteralPath (Join-Path $destination 'freeroam-pack-info.txt') -Destination $reportDirectory -Force
+            Copy-Item -LiteralPath (Join-Path $destination 'freeroam-pack-info.json') -Destination $reportDirectory -Force
+            $successMessage = 'Reference scan and Freeroam pack inspection completed. No jar was executed and no pack files were modified.'
+            Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value $successMessage -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $destination 'freeroam-pack-status.txt') -Value $successMessage -Encoding UTF8
           }
           catch {
             $failed = $true
             $safeMessage = 'Inventory could not be completed: ' + $_.Exception.Message
             Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value $safeMessage -Encoding UTF8
+            if (Test-Path -LiteralPath $destination -PathType Container) {
+              Set-Content -LiteralPath (Join-Path $destination 'freeroam-pack-status.txt') -Value $safeMessage -Encoding UTF8
+            }
             Write-Host $safeMessage
           }
 
