@@ -54,7 +54,7 @@ Assert-Condition -Condition ($allRecords.Count -eq [int]$inventory.sourceModJarC
 $modsDirectory = Join-Path $root.FullName 'mods'
 $clientDirectory = Join-Path $root.FullName 'client-only-mods'
 New-Item -ItemType Directory -Path $clientDirectory -Force | Out-Null
-$clientPattern = '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-)'
+$clientPattern = '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-|TRansliterationLib-)'
 $separated = [System.Collections.Generic.List[string]]::new()
 $classificationByFile = @{}
 
@@ -127,7 +127,7 @@ $readme.Add('')
 $readme.Add('Branded FunCity packaging around the matching Hypecity Mohist hybrid engine; this is not a from-scratch replacement for Minecraft/Forge.')
 $readme.Add('Pack: Freeroam 1.0.0.mrpack | Minecraft 1.16.5 | Forge 36.2.42 | Mohist 1.16.5-1242.')
 $readme.Add("All $($allRecords.Count) mod JARs from the pack remain present and checksum-verified. $($activeFiles.Count) server-compatible mods are active in mods/; $($clientFiles.Count) client-only mods are retained in client-only-mods/ and intentionally not loaded by a dedicated server.")
-$readme.Add('The first all-mod server test correctly exposed client-side classes in Oculus, In-Game Account Switcher, LightfallClient, and related render/account-switcher mods. These files have been preserved rather than deleted.')
+$readme.Add('Full-pack server tests exposed dedicated-server client-class references in Oculus, In-Game Account Switcher, LightfallClient, TRansliterationLib, and related render/account-switcher mods. These client-only files are preserved rather than deleted.')
 $readme.Add('No additional plugins are installed, isolating the pack/hybrid-engine compatibility test.')
 $readme.Add('The server uses only the copied, SHA-256-verified portable Temurin JRE 11.0.32.1. No system-Java fallback is allowed.')
 $readme.Add('The owner accepted the Minecraft EULA; eula.txt remains true.')

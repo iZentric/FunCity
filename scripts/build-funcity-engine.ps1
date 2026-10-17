@@ -39,7 +39,7 @@ function Test-ClientOnlyMod {
     # These client render/account-switcher mods caused Forge's dedicated-server
     # RuntimeDistCleaner failure in the first full-pack test. Preserve them in
     # the engine bundle, but never place them in the active server mods/ folder.
-    return ($FileName -match '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-)')
+    return ($FileName -match '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-|TRansliterationLib-)')
 }
 
 function Get-UniqueFilePath {
