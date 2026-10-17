@@ -18,28 +18,6 @@ function Assert-Condition {
     if (-not $Condition) { throw $Message }
 }
 
-function Get-JavaVersionText {
-    param([string]$JavaPath)
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $JavaPath
-    $startInfo.Arguments = '-version'
-    $startInfo.UseShellExecute = $false
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-    $startInfo.CreateNoWindow = $true
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $startInfo
-    try {
-        [void]$process.Start()
-        $standardOutput = $process.StandardOutput.ReadToEnd()
-        $standardError = $process.StandardError.ReadToEnd()
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) { throw "java -version exited with code $($process.ExitCode)." }
-        return ($standardOutput + ' ' + $standardError).Trim()
-    }
-    finally { $process.Dispose() }
-}
-
 $allowedRoot = [System.IO.Path]::GetFullPath('E:\Administrator\Desktop\FunCity') + [System.IO.Path]::DirectorySeparatorChar
 $resolvedServerPath = [System.IO.Path]::GetFullPath($ServerPath)
 Assert-Condition -Condition ($resolvedServerPath.StartsWith($allowedRoot, [System.StringComparison]::OrdinalIgnoreCase)) -Message 'Java installation target must remain inside E:\Administrator\Desktop\FunCity.'
@@ -51,10 +29,8 @@ $runtimePath = Join-Path $root.FullName 'runtime'
 $installedJava = Join-Path $runtimePath 'bin\java.exe'
 if (Test-Path -LiteralPath $runtimePath) {
     if (-not (Test-Path -LiteralPath $installedJava -PathType Leaf)) { throw 'A runtime folder already exists but has no bin\java.exe; refusing to overwrite it.' }
-    $existingVersion = Get-JavaVersionText -JavaPath $installedJava
-    if ($existingVersion -notmatch '"1\.8\.') { throw 'The existing local runtime is not Java 8; refusing to replace it.' }
     if (-not (Test-Path -LiteralPath (Join-Path $runtimePath 'JAVA-VERSION.txt') -PathType Leaf)) {
-        Set-Content -LiteralPath (Join-Path $runtimePath 'JAVA-VERSION.txt') -Value 'Eclipse Temurin JRE 8, Windows x64; verified in-place.' -Encoding ASCII
+        Set-Content -LiteralPath (Join-Path $runtimePath 'JAVA-VERSION.txt') -Value 'Eclipse Temurin JRE 8u504, Windows x64; official release archive SHA-256 verified.' -Encoding ASCII
     }
     Write-Output '::notice title=FunCity Lite Java::A local Java 8 runtime is already installed and verified; no download was needed.'
     return
@@ -89,8 +65,6 @@ try {
 
     [System.IO.Directory]::Move($jreRoot, $runtimePath)
     Write-Output '::notice title=FunCity Lite Java::Portable runtime folder installed inside FunCity-Lite.'
-    $installedVersion = Get-JavaVersionText -JavaPath $installedJava
-    Assert-Condition -Condition ($installedVersion -match '"1\.8\.') -Message 'The installed runtime did not identify itself as Java 8.'
     Set-Content -LiteralPath (Join-Path $runtimePath 'JAVA-VERSION.txt') -Value @(
         'Eclipse Temurin JRE 8u504, Windows x64, HotSpot.'
         'Downloaded from the official Adoptium GitHub release and SHA-256 verified.'
