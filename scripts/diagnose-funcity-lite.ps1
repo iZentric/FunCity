@@ -56,9 +56,20 @@ $taskCmdlet = Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue 
 $runnerIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $taskSupport = if ($null -eq $taskCmdlet) { 'cmdlets-unavailable' } elseif ($runnerIdentity.User.Value -eq 'S-1-5-18') { 'runner-is-system' } else { 'user-scoped-ready' }
 $managedTaskState = 'none'
+$taskDefinitionSupport = 'not-tested'
 if ($null -ne $taskCmdlet) {
     $managedTask = Get-ScheduledTask -TaskName 'FunCity-Lite-Mohist-Server' -ErrorAction SilentlyContinue
     if ($null -ne $managedTask) { $managedTaskState = [string]$managedTask.State }
+}
+if ($taskSupport -eq 'user-scoped-ready') {
+    try {
+        $probeAction = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\cmd.exe') -Argument '/c exit 0' -WorkingDirectory $root.FullName
+        $probePrincipal = New-ScheduledTaskPrincipal -UserId $runnerIdentity.Name -LogonType S4U -RunLevel Limited
+        $probeSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Days 3650) -MultipleInstances IgnoreNew
+        $null = New-ScheduledTask -Action $probeAction -Principal $probePrincipal -Settings $probeSettings -Description 'Unregistered FunCity Lite compatibility probe.'
+        $taskDefinitionSupport = 'S4U-definition-ready'
+    }
+    catch { $taskDefinitionSupport = 'S4U-definition-failed' }
 }
 
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
@@ -121,6 +132,6 @@ $latestTail = if ($latestTailLines.Count -gt 0) { ($latestTailLines -join ' | ')
 $startupSummary = "signals=$failureSummary; latest-tail=$latestTail"
 if ($startupSummary.Length -gt 2400) { $startupSummary = $startupSummary.Substring(0, 2400) }
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); TaskScheduler=$taskSupport/$managedTaskState; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); TaskScheduler=$taskSupport/$managedTaskState/$taskDefinitionSupport; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
