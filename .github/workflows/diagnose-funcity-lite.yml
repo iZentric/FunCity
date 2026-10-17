@@ -1,0 +1,35 @@
+name: Diagnose FunCity Lite PC startup
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - scripts/diagnose-funcity-lite.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-lite-pc-operations
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    name: Read-only FunCity Lite startup preflight
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 5
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Inspect only the FunCity Lite target
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $diagnoseArgs = @{
+            ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          }
+          & .\scripts\diagnose-funcity-lite.ps1 @diagnoseArgs
