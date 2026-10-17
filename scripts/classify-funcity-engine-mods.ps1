@@ -75,14 +75,14 @@ foreach ($record in $allRecords) {
             throw "Client-only mod is missing from both folders: $fileName"
         }
         $record.relativeDestination = 'client-only-mods/' + $fileName
-        $record.loadOnServer = $false
+        $record | Add-Member -MemberType NoteProperty -Name loadOnServer -Value $false -Force
         $record.serverEnvironment = 'client-only; dedicated-server class references confirmed by first test'
         $separated.Add($fileName)
     }
     else {
         Assert-Condition -Condition (Test-Path -LiteralPath $activePath -PathType Leaf) -Message "Server mod is missing: $fileName"
         $record.relativeDestination = 'mods/' + $fileName
-        $record.loadOnServer = $true
+        $record | Add-Member -MemberType NoteProperty -Name loadOnServer -Value $true -Force
     }
     $finalPath = Join-Path $root.FullName ([string]$record.relativeDestination)
     Assert-Condition -Condition (Test-Path -LiteralPath $finalPath -PathType Leaf) -Message "Mod was not preserved: $fileName"
