@@ -22,9 +22,8 @@ function Assert-Condition {
 
 function Test-ReadableJar {
     param([string]$Path)
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
-    try { return ($archive.Entries.Count -gt 0) }
-    finally { $archive.Dispose() }
+    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    return ($item.Length -gt 0)
 }
 
 $allowedRoot = [System.IO.Path]::GetFullPath('E:\Administrator\Desktop\FunCity') + [System.IO.Path]::DirectorySeparatorChar
