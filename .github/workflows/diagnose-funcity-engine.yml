@@ -25,10 +25,12 @@ jobs:
       - name: Check out this branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Inspect the engine logs and process state only
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
+          $workspaceCommit = git -C $env:GITHUB_WORKSPACE rev-parse HEAD
+          Write-Output "Diagnostic source revision: workflow=$env:GITHUB_SHA; workspace=$workspaceCommit"
           & .\scripts\diagnose-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
