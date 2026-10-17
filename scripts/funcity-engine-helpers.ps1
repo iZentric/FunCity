@@ -71,7 +71,13 @@ function Get-FunCityLocalUdpEndpoints {
     if ($null -eq (Get-Command -Name Get-NetUDPEndpoint -ErrorAction SilentlyContinue)) {
         throw 'The Windows NetTCPIP Get-NetUDPEndpoint command is unavailable; UDP listener state cannot be verified.'
     }
-    Get-NetUDPEndpoint -LocalPort $Port -ErrorAction Stop
+    try {
+        return @(Get-NetUDPEndpoint -LocalPort $Port -ErrorAction Stop)
+    }
+    catch {
+        if ($_.Exception.Message -match '(?i)No MSFT_NetUDPEndpoint objects found') { return @() }
+        throw
+    }
 }
 
 function Set-FunCityVoiceChatUdpPort {
