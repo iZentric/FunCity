@@ -8,6 +8,12 @@ param(
 # This script never deletes a mod and refuses to edit a running test instance.
 $ErrorActionPreference = 'Stop'
 
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity full-pack mod classification::$failure"
+    throw
+}
+
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
@@ -32,17 +38,14 @@ $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.propert
 $portLine = $properties | Where-Object { $_ -match '^\s*server-port\s*=' } | Select-Object -First 1
 $port = if ($null -eq $portLine) { 25566 } else { [int](($portLine -replace '^\s*server-port\s*=\s*', '').Trim()) }
 $client = New-Object System.Net.Sockets.TcpClient
+$portOpen = $false
 try {
-    $async = $client.BeginConnect('127.0.0.1', $port, $null, $null)
-    if ($async.AsyncWaitHandle.WaitOne(500, $false)) {
-        try { $client.EndConnect($async); throw "Port $port is open; refusing to modify a live server." }
-        catch { if ($_.Exception.Message -match "Port $port is open") { throw } }
-    }
+    $client.Connect('127.0.0.1', $port)
+    $portOpen = $true
 }
-finally {
-    if ($null -ne $async) { $async.AsyncWaitHandle.Close() }
-    $client.Close()
-}
+catch { $portOpen = $false }
+finally { $client.Close() }
+Assert-Condition -Condition (-not $portOpen) -Message "Port $port is open; refusing to modify a live server."
 
 $inventoryPath = Join-Path $root.FullName 'pack-mod-inventory.json'
 $inventory = ConvertFrom-Json -InputObject (Get-Content -LiteralPath $inventoryPath -Raw) -ErrorAction Stop
@@ -58,14 +61,17 @@ foreach ($record in $allRecords) {
     $fileName = [string]$record.file
     Assert-Condition -Condition (-not [string]::IsNullOrWhiteSpace($fileName) -and $fileName -match '(?i)\.jar$') -Message 'The pack inventory has an invalid mod record.'
     $isClientOnly = $fileName -match $clientPattern
-    $sourcePath = Join-Path $root.FullName ([string]$record.relativeDestination)
+    $activePath = Join-Path $modsDirectory $fileName
+    $clientPath = Join-Path $clientDirectory $fileName
     if ($isClientOnly) {
-        $destinationPath = Join-Path $clientDirectory $fileName
-        if (Test-Path -LiteralPath $sourcePath -PathType Leaf) {
-            Assert-Condition -Condition (-not (Test-Path -LiteralPath $destinationPath)) -Message "Both source and client-only destinations exist for $fileName; refusing to overwrite either copy."
-            Move-Item -LiteralPath $sourcePath -Destination $destinationPath -ErrorAction Stop
+        if ([string]$record.relativeDestination -like 'client-only-mods/*') {
+            Assert-Condition -Condition (Test-Path -LiteralPath $clientPath -PathType Leaf) -Message "Previously classified client-only mod is missing: $fileName"
         }
-        elseif (-not (Test-Path -LiteralPath $destinationPath -PathType Leaf)) {
+        elseif (Test-Path -LiteralPath $activePath -PathType Leaf) {
+            Assert-Condition -Condition (-not (Test-Path -LiteralPath $clientPath)) -Message "Both active and client-only copies exist for $fileName; refusing to overwrite either copy."
+            Move-Item -LiteralPath $activePath -Destination $clientPath -ErrorAction Stop
+        }
+        elseif (-not (Test-Path -LiteralPath $clientPath -PathType Leaf)) {
             throw "Client-only mod is missing from both folders: $fileName"
         }
         $record.relativeDestination = 'client-only-mods/' + $fileName
@@ -74,7 +80,7 @@ foreach ($record in $allRecords) {
         $separated.Add($fileName)
     }
     else {
-        Assert-Condition -Condition (Test-Path -LiteralPath $sourcePath -PathType Leaf) -Message "Server mod is missing: $fileName"
+        Assert-Condition -Condition (Test-Path -LiteralPath $activePath -PathType Leaf) -Message "Server mod is missing: $fileName"
         $record.relativeDestination = 'mods/' + $fileName
         $record.loadOnServer = $true
     }
