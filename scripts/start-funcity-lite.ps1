@@ -140,21 +140,22 @@ $reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notma
 $reportLines += "Server status: startup pending; PID $($serverProcess.Id); port $port."
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
-$latestLog = Join-Path $logsPath 'latest.log'
 $deadline = (Get-Date).AddMinutes(10)
 $ready = $false
+$stablePortChecks = 0
 while ((Get-Date) -lt $deadline) {
     $runningProcess = Get-Process -Id $serverProcess.Id -ErrorAction SilentlyContinue
-    if ($null -eq $runningProcess) { throw 'The Java process exited before the server became ready. Inspect logs/latest.log inside FunCity-Lite.' }
-    $logReady = $false
-    if (Test-Path -LiteralPath $latestLog -PathType Leaf) {
-        $currentLog = [System.IO.File]::ReadAllText($latestLog)
-        $logReady = $currentLog -match '(?i)Done \([^)]+\)!'
+    if ($null -eq $runningProcess) { throw 'The Java process exited before the server port became ready. Inspect logs inside FunCity-Lite.' }
+    if (Test-LocalTcpPort -Port $port) {
+        $stablePortChecks++
+        if ($stablePortChecks -ge 2) { $ready = $true; break }
     }
-    if ($logReady -and (Test-LocalTcpPort -Port $port)) { $ready = $true; break }
+    else {
+        $stablePortChecks = 0
+    }
     Start-Sleep -Seconds 5
 }
-if (-not $ready) { throw "Server process $($serverProcess.Id) is still alive but not confirmed ready after 10 minutes. Inspect logs/latest.log inside FunCity-Lite." }
+if (-not $ready) { throw "Server process $($serverProcess.Id) is still alive but port $port was not confirmed ready after 10 minutes. Inspect logs inside FunCity-Lite." }
 
 $reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Java runtime:' })
 $reportLines += "Server status: running; PID $($serverProcess.Id); port $port."

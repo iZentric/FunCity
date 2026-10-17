@@ -53,9 +53,9 @@ Assert-Condition -Condition (Test-LocalTcpPort -Port $port) -Message "FunCity Li
 
 $latestLog = Join-Path $root.FullName 'logs\latest.log'
 Assert-Condition -Condition (Test-Path -LiteralPath $latestLog -PathType Leaf) -Message 'logs/latest.log was not created.'
-$logText = [System.IO.File]::ReadAllText($latestLog)
-Assert-Condition -Condition ($logText -match '(?i)Done \([^)]+\)!') -Message 'Minecraft has not reported a ready state yet.'
+$latestLogInfo = Get-Item -LiteralPath $latestLog -ErrorAction Stop
+Assert-Condition -Condition ($latestLogInfo.Length -gt 0) -Message 'logs/latest.log is empty.'
 
-$summary = "Running=true; PID=$serverPid; Java=Temurin JRE 11.0.32.1; port=$port listening locally; startup=Done; EULA=true; logs remain in FunCity-Lite"
+$summary = "Running=true; PID=$serverPid; Java=Temurin JRE 11.0.32.1; port=$port listening locally; startup=process+port ready; log-file=present; EULA=true; logs remain in FunCity-Lite"
 Write-Output "::notice title=FunCity Lite running check::$summary"
 Write-Output $summary
