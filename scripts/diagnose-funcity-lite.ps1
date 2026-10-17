@@ -134,4 +134,5 @@ if ($startupSummary.Length -gt 2400) { $startupSummary = $startupSummary.Substri
 
 $summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); TaskScheduler=$taskSupport/$managedTaskState/$taskDefinitionSupport; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
+Write-Output "::notice title=FunCity Lite task scheduler preflight::TaskScheduler=$taskSupport; managed-task=$managedTaskState; task-definition=$taskDefinitionSupport"
 Write-Output $summary
