@@ -7,6 +7,12 @@ param(
 # It does not edit eula.txt, start the server, or install anything system-wide.
 $ErrorActionPreference = 'Stop'
 
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity Lite Java installation::$failure"
+    throw
+}
+
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
@@ -42,11 +48,13 @@ try {
     $extractPath = Join-Path $stagingPath 'extract'
     New-Item -ItemType Directory -Path $extractPath -Force | Out-Null
     Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -UseBasicParsing -TimeoutSec 300 -Headers @{ 'User-Agent' = 'FunCity-Engine-Lite/0.1' }
+    Write-Output '::notice title=FunCity Lite Java::Downloaded the official Temurin JRE archive inside the server folder.'
 
     $archiveFile = Get-Item -LiteralPath $archivePath
     Assert-Condition -Condition ($archiveFile.Length -eq $expectedBytes) -Message 'Downloaded Java archive size did not match the release metadata.'
     $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
     Assert-Condition -Condition ($actualSha256 -eq $expectedSha256) -Message 'Downloaded Java archive SHA-256 did not match the signed release metadata.'
+    Write-Output '::notice title=FunCity Lite Java::Archive size and SHA-256 verified.'
 
     [System.IO.Compression.ZipFile]::ExtractToDirectory($archivePath, $extractPath)
     $javaExe = Get-ChildItem -LiteralPath $extractPath -File -Filter 'java.exe' -Recurse | Where-Object { $_.Directory.Name -ieq 'bin' } | Select-Object -First 1
@@ -55,6 +63,7 @@ try {
     Assert-Condition -Condition (Test-Path -LiteralPath (Join-Path $jreRoot 'bin\java.exe') -PathType Leaf) -Message 'The extracted JRE layout was unexpected.'
 
     [System.IO.Directory]::Move($jreRoot, $runtimePath)
+    Write-Output '::notice title=FunCity Lite Java::Portable runtime folder installed inside FunCity-Lite.'
     $installedVersionLines = @(& $installedJava -version 2>&1)
     $installedVersion = $installedVersionLines -join ' '
     Assert-Condition -Condition ($installedVersion -match '"1\.8\.') -Message 'The installed runtime did not identify itself as Java 8.'
