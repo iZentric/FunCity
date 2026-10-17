@@ -1,0 +1,33 @@
+name: Verify full Freeroam FunCity Engine
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/verify-funcity-engine.yml
+      - scripts/verify-funcity-engine.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-engine-full-pack-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify every mod and portable runtime on KERNELOS-PC
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 15
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Run read-only full-pack structural checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\verify-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
