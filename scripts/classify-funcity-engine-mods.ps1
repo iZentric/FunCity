@@ -56,6 +56,7 @@ $clientDirectory = Join-Path $root.FullName 'client-only-mods'
 New-Item -ItemType Directory -Path $clientDirectory -Force | Out-Null
 $clientPattern = '(?i)^(TextruesRubidiumOptions-|InGameAccountSwitcher-|rubidium-|oculus-|lightfallclient-|notenoughanimations-|CTM-)'
 $separated = [System.Collections.Generic.List[string]]::new()
+$classificationByFile = @{}
 
 foreach ($record in $allRecords) {
     $fileName = [string]$record.file
@@ -75,14 +76,14 @@ foreach ($record in $allRecords) {
             throw "Client-only mod is missing from both folders: $fileName"
         }
         $record.relativeDestination = 'client-only-mods/' + $fileName
-        $record | Add-Member -MemberType NoteProperty -Name loadOnServer -Value $false -Force
         $record.serverEnvironment = 'client-only; dedicated-server class references confirmed by first test'
+        $classificationByFile[$fileName] = $false
         $separated.Add($fileName)
     }
     else {
         Assert-Condition -Condition (Test-Path -LiteralPath $activePath -PathType Leaf) -Message "Server mod is missing: $fileName"
         $record.relativeDestination = 'mods/' + $fileName
-        $record | Add-Member -MemberType NoteProperty -Name loadOnServer -Value $true -Force
+        $classificationByFile[$fileName] = $true
     }
     $finalPath = Join-Path $root.FullName ([string]$record.relativeDestination)
     Assert-Condition -Condition (Test-Path -LiteralPath $finalPath -PathType Leaf) -Message "Mod was not preserved: $fileName"
@@ -93,10 +94,30 @@ foreach ($record in $allRecords) {
 
 $activeFiles = @(Get-ChildItem -LiteralPath $modsDirectory -File -Filter '*.jar' -ErrorAction Stop)
 $clientFiles = @(Get-ChildItem -LiteralPath $clientDirectory -File -Filter '*.jar' -ErrorAction Stop)
-$inventory | Add-Member -NotePropertyName serverModJarCount -NotePropertyValue $activeFiles.Count -Force
-$inventory | Add-Member -NotePropertyName clientOnlyModJarCount -NotePropertyValue $clientFiles.Count -Force
 Assert-Condition -Condition ($activeFiles.Count + $clientFiles.Count -eq $allRecords.Count) -Message 'Not all modpack JARs are retained across the active and client-only folders.'
 Assert-Condition -Condition ($separated.Count -gt 0) -Message 'No known client-only jars were separated despite the dedicated-server crash.'
+$updatedRecords = [System.Collections.Generic.List[object]]::new()
+foreach ($record in $allRecords) {
+    $recordData = [ordered]@{}
+    foreach ($property in $record.PSObject.Properties) { $recordData[$property.Name] = $property.Value }
+    $recordData['loadOnServer'] = [bool]$classificationByFile[[string]$record.file]
+    $updatedRecords.Add([pscustomobject]$recordData)
+}
+$allRecords = @($updatedRecords)
+$inventory = [pscustomobject]@{
+    pack = $inventory.pack
+    packName = $inventory.packName
+    packVersion = $inventory.packVersion
+    minecraft = $inventory.minecraft
+    forge = $inventory.forge
+    engine = $inventory.engine
+    port = $inventory.port
+    heapGB = $inventory.heapGB
+    sourceModJarCount = $allRecords.Count
+    serverModJarCount = $activeFiles.Count
+    clientOnlyModJarCount = $clientFiles.Count
+    mods = $allRecords
+}
 Set-Content -LiteralPath $inventoryPath -Value (ConvertTo-Json -InputObject $inventory -Depth 8) -Encoding UTF8
 
 $readmePath = Join-Path $root.FullName 'README-FUNCITY-ENGINE.txt'
