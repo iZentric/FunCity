@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: funcity-lite-server-build
+  group: funcity-lite-pc-operations
   cancel-in-progress: false
 
 jobs:
@@ -30,10 +30,16 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $buildArgs = @{
-            ProjectRoot = 'E:\Administrator\Desktop\FunCity'
-            ReferencePath = 'E:\Administrator\Desktop\FunCity\servere referinta'
-            OutputParent = 'E:\Administrator\Desktop\FunCity\FunCity server'
-            OutputName = 'FunCity-Lite'
+          $outputPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          if (Test-Path -LiteralPath $outputPath) {
+            Write-Output '::notice title=FunCity Lite build::Existing output preserved; refusing to rebuild over the current server.'
           }
-          & .\scripts\build-funcity-lite.ps1 @buildArgs
+          else {
+            $buildArgs = @{
+              ProjectRoot = 'E:\Administrator\Desktop\FunCity'
+              ReferencePath = 'E:\Administrator\Desktop\FunCity\servere referinta'
+              OutputParent = 'E:\Administrator\Desktop\FunCity\FunCity server'
+              OutputName = 'FunCity-Lite'
+            }
+            & .\scripts\build-funcity-lite.ps1 @buildArgs
+          }

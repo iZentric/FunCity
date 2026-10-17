@@ -290,7 +290,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-java -Xms2G -Xmx4G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+DisableExplicitGC -jar server.jar nogui
+java -Xms2G -Xmx4G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -jar server.jar nogui
 pause
 '@
     Set-Content -LiteralPath (Join-Path $stagingPath 'start.bat') -Value $startBat -Encoding ASCII
@@ -314,7 +314,7 @@ pause
         foreach ($name in $missingPlugins) { $readme.Add('  ' + $name) }
     }
     $readme.Add('')
-    $readme.Add('Performance baseline: FerriteCore and ModernFix are included by the pack; view-distance is set to 6; G1GC is configured in start.bat.')
+    $readme.Add('Performance baseline: FerriteCore and ModernFix are included by the pack; view-distance is 6; start.bat uses a 2-4 GB G1GC low-pause profile with heap-occupancy tuning. Measure live MSPT with spark after owner-approved startup.')
     $readme.Add('No world, logs, old configs, account data, or old plugin configs were copied.')
     $readme.Add('EULA is deliberately false. Set eula=true yourself only after reading and accepting the Minecraft EULA.')
     $readme.Add('No firewall rules or router port forwarding were changed.')
@@ -324,6 +324,7 @@ pause
     $report.Add('Build result: complete')
     $report.Add('Pack: ' + [System.IO.Path]::GetFileName($packPath) + ' | Minecraft ' + $minecraftVersion + ' | Forge ' + $forgeVersion)
     $report.Add('Engine: Mohist 1.16.5-1242')
+    $report.Add('Performance profile: G1GC tuned for a 2-4 GB heap; view-distance=6; live MSPT still requires a running, owner-approved server.')
     foreach ($note in $buildNotes) { $report.Add('Note: ' + $note) }
     $report.Add('Server mods downloaded and hash-verified: ' + $downloadedMods.Count)
     foreach ($name in $downloadedMods) { $report.Add('  mod: ' + $name) }

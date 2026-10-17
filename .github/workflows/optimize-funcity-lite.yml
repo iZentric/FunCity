@@ -1,0 +1,37 @@
+name: Optimize FunCity Lite on PC
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/optimize-funcity-lite.yml
+      - scripts/optimize-funcity-lite.ps1
+      - scripts/build-funcity-lite.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-lite-pc-operations
+  cancel-in-progress: false
+
+jobs:
+  optimize-server:
+    name: Tune only the FunCity Lite server folder
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Apply safe G1GC tuning without starting the server
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $optimizeArgs = @{
+            ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          }
+          & .\scripts\optimize-funcity-lite.ps1 @optimizeArgs
