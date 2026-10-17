@@ -108,6 +108,92 @@ function Get-JarInventory {
     }
 }
 
+function Get-ServerJarDetails {
+    param([string]$JarPath, [string]$ReferenceRoot)
+
+    $manifestFields = [System.Collections.Generic.List[string]]::new()
+    $pomCoordinates = [System.Collections.Generic.List[string]]::new()
+    $modIds = [System.Collections.Generic.List[string]]::new()
+    $entryMarkers = [System.Collections.Generic.List[string]]::new()
+    $inspectionError = $null
+    $jar = Get-Item -LiteralPath $JarPath -ErrorAction Stop
+    $archive = $null
+
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($JarPath)
+
+        $manifestEntry = $archive.GetEntry('META-INF/MANIFEST.MF')
+        if ($null -ne $manifestEntry) {
+            $manifestStream = $manifestEntry.Open()
+            try {
+                $reader = New-Object System.IO.StreamReader($manifestStream)
+                $text = $reader.ReadToEnd()
+                $reader.Dispose()
+            }
+            finally { $manifestStream.Dispose() }
+            foreach ($line in ($text -split "`r?`n" | Where-Object { $_ -match '^(Main-Class|Implementation-(Title|Version|Vendor)|Specification-(Title|Version)|Created-By|Build-Jdk):' })) {
+                $manifestFields.Add($line.Trim())
+            }
+        }
+
+        $modsTomlEntry = $archive.GetEntry('META-INF/mods.toml')
+        if ($null -ne $modsTomlEntry) {
+            $modsStream = $modsTomlEntry.Open()
+            try {
+                $reader = New-Object System.IO.StreamReader($modsStream)
+                $modsText = $reader.ReadToEnd()
+                $reader.Dispose()
+            }
+            finally { $modsStream.Dispose() }
+            foreach ($match in [regex]::Matches($modsText, '(?m)^\s*modId\s*=\s*"([^"]+)"')) {
+                Add-UniqueString -List $modIds -Value $match.Groups[1].Value
+            }
+        }
+
+        $pomEntries = @($archive.Entries | Where-Object {
+            $_.FullName -match '(?i)^META-INF/maven/.+/pom\.properties$' -and
+            $_.FullName -match '(?i)(mohist|arclight|magma|forge|bukkit|spigot|paper|sponge|catserver)'
+        } | Select-Object -First 20)
+        foreach ($entry in $pomEntries) {
+            $pomStream = $entry.Open()
+            try {
+                $reader = New-Object System.IO.StreamReader($pomStream)
+                $pomText = $reader.ReadToEnd()
+                $reader.Dispose()
+            }
+            finally { $pomStream.Dispose() }
+            $coordinates = @($pomText -split "`r?`n" | Where-Object { $_ -match '^(groupId|artifactId|version)=' })
+            if ($coordinates.Count -gt 0) {
+                $pomCoordinates.Add($entry.FullName + ': ' + ($coordinates -join ', '))
+            }
+        }
+
+        foreach ($entry in ($archive.Entries | Where-Object {
+            $_.FullName -match '(?i)(mohist|arclight|magma|banner|cardboard|sponge|catserver|thermos|paper|spigot|bukkit)'
+        } | Select-Object -First 40)) {
+            Add-UniqueString -List $entryMarkers -Value $entry.FullName
+        }
+    }
+    catch {
+        $inspectionError = $_.Exception.GetType().Name
+    }
+    finally {
+        if ($null -ne $archive) { $archive.Dispose() }
+    }
+
+    return [pscustomobject]@{
+        name = $jar.Name
+        path = Get-RelativePath -Root $ReferenceRoot -Path $JarPath
+        sizeBytes = $jar.Length
+        manifestFields = @($manifestFields)
+        embeddedModIds = @($modIds)
+        enginePomCoordinates = @($pomCoordinates)
+        engineEntryMarkers = @($entryMarkers)
+        inspectionError = $inspectionError
+    }
+}
+
 function Get-ServerMetadata {
     param([string]$ServerPath, [string]$ReferenceRoot, [int]$JarLimit)
 
@@ -167,6 +253,11 @@ function Get-ServerMetadata {
     $serverJars = @($rootFiles | Where-Object {
         $_.Extension -ieq '.jar' -and $_.Name -match '(?i)(server|minecraft|fabric|forge|neoforge|paper|spigot|purpur|arclight|mohist|banner)'
     } | Select-Object -ExpandProperty Name)
+    $serverJarDetails = @(
+        foreach ($serverJar in $serverJars) {
+            Get-ServerJarDetails -JarPath (Join-Path $ServerPath $serverJar) -ReferenceRoot $ReferenceRoot
+        }
+    )
     $startupFiles = @($rootFiles | Where-Object {
         $_.Extension -in @('.bat', '.cmd', '.ps1', '.sh') -and $_.Name -match '(?i)(run|start|server|launch)'
     } | Select-Object -ExpandProperty Name)
@@ -183,6 +274,7 @@ function Get-ServerMetadata {
         modJars = $mods
         pluginJars = $plugins
         serverJars = $serverJars
+        serverJarDetails = $serverJarDetails
         startupScripts = $startupFiles
     }
 }
@@ -248,6 +340,14 @@ foreach ($server in $servers) {
     $summary.Add('Plugins: ' + $server.pluginJars.count)
     foreach ($jar in $server.pluginJars.names) { $summary.Add('  plugin: ' + $jar) }
     if ($server.serverJars.Count) { $summary.Add('Server jars: ' + ($server.serverJars -join ', ')) }
+    foreach ($detail in $server.serverJarDetails) {
+        $summary.Add('Server jar detail: ' + $detail.path + ' (' + $detail.sizeBytes + ' bytes)')
+        foreach ($field in $detail.manifestFields) { $summary.Add('  manifest: ' + $field) }
+        foreach ($coordinate in $detail.enginePomCoordinates) { $summary.Add('  engine coordinate: ' + $coordinate) }
+        if ($detail.embeddedModIds.Count) { $summary.Add('  embedded mod IDs: ' + ($detail.embeddedModIds -join ', ')) }
+        foreach ($marker in $detail.engineEntryMarkers) { $summary.Add('  engine marker: ' + $marker) }
+        if ($detail.inspectionError) { $summary.Add('  inspection error: ' + $detail.inspectionError) }
+    }
     if ($server.startupScripts.Count) { $summary.Add('Startup files: ' + ($server.startupScripts -join ', ')) }
     if ($server.manifests.Count) { $summary.Add('Manifests: ' + ($server.manifests -join ', ')) }
 }

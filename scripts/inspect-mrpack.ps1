@@ -71,6 +71,7 @@ try {
     $serverMods = [System.Collections.Generic.List[string]]::new()
     $clientOnlyMods = [System.Collections.Generic.List[string]]::new()
     $performanceMods = [System.Collections.Generic.List[string]]::new()
+    $environmentDetails = [System.Collections.Generic.List[string]]::new()
     $files = @(Get-PropertyValue -Object $manifest -Name 'files')
     foreach ($file in $files) {
         $path = [string](Get-PropertyValue -Object $file -Name 'path')
@@ -78,6 +79,10 @@ try {
         $name = [System.IO.Path]::GetFileName($path)
         $environment = Get-PropertyValue -Object $file -Name 'env'
         $serverEnvironment = [string](Get-PropertyValue -Object $environment -Name 'server')
+        $clientEnvironment = [string](Get-PropertyValue -Object $environment -Name 'client')
+        if ([string]::IsNullOrWhiteSpace($serverEnvironment)) { $serverEnvironment = 'not specified' }
+        if ([string]::IsNullOrWhiteSpace($clientEnvironment)) { $clientEnvironment = 'not specified' }
+        $environmentDetails.Add($name + ' [server=' + $serverEnvironment + '; client=' + $clientEnvironment + ']')
         if ($serverEnvironment -eq 'unsupported') {
             $clientOnlyMods.Add($name)
         }
@@ -103,6 +108,7 @@ try {
         serverModJars = Get-LimitedNames -Items @($serverMods) -Limit $MaxNamesPerCategory
         clientOnlyModJars = Get-LimitedNames -Items @($clientOnlyMods) -Limit $MaxNamesPerCategory
         performanceModsAlreadyIncluded = @($performanceMods | Select-Object -Unique)
+        fileEnvironmentDetails = @($environmentDetails)
         serverOverrideFileCount = $serverOverrideEntries.Count
         clientOverrideFileCount = $clientOverrideEntries.Count
         notes = @(
@@ -128,6 +134,8 @@ $lines.Add('Server mods: ' + $report.serverModJars.count)
 foreach ($name in $report.serverModJars.names) { $lines.Add('  server mod: ' + $name) }
 $lines.Add('Client-only mods: ' + $report.clientOnlyModJars.count)
 foreach ($name in $report.clientOnlyModJars.names) { $lines.Add('  client-only: ' + $name) }
+$lines.Add('Pack file environment declarations:')
+foreach ($detail in $report.fileEnvironmentDetails) { $lines.Add('  ' + $detail) }
 $lines.Add('Performance mods already included: ' + $(if ($report.performanceModsAlreadyIncluded.Count) { $report.performanceModsAlreadyIncluded -join ', ' } else { 'none detected by name' }))
 $lines.Add('Server override files: ' + $report.serverOverrideFileCount)
 $lines.Add('Client override files: ' + $report.clientOverrideFileCount)
