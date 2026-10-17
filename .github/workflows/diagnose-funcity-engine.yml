@@ -31,6 +31,5 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $workspaceCommit = git -C $env:GITHUB_WORKSPACE rev-parse HEAD
-          Write-Output "Diagnostic source revision: workflow=$env:GITHUB_SHA; workspace=$workspaceCommit"
+          Write-Output "Diagnostic workflow source revision: $env:GITHUB_SHA"
           & .\scripts\diagnose-funcity-engine.ps1 -ServerPath 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Engine-Freeroam'
