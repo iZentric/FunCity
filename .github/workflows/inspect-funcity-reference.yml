@@ -45,6 +45,12 @@ jobs:
             Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.txt') -Destination $reportDirectory -Force
             Copy-Item -LiteralPath (Join-Path $destination 'funcity-reference-inventory.json') -Destination $reportDirectory -Force
             Set-Content -LiteralPath (Join-Path $reportDirectory 'status.txt') -Value 'Inventory completed. Only names and recognized manifests were read; no server or mod jar was executed.' -Encoding UTF8
+            $summaryText = Get-Content -LiteralPath (Join-Path $reportDirectory 'funcity-reference-inventory.txt') -Raw
+            if ($summaryText.Length -gt 18000) {
+              $summaryText = $summaryText.Substring(0, 18000) + "`n[Report truncated in the job summary; full report is attached as an artifact.]"
+            }
+            $markdown = @('### Reference server inventory (names and manifest versions only)', '', '```text', $summaryText, '```') -join "`n"
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $markdown -Encoding UTF8
           }
           catch {
             $failed = $true
