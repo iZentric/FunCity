@@ -60,7 +60,40 @@ $javaLine = @($startText -split "`r?`n" | Where-Object { $_ -match '^\s*(?:java|
 $tuning = if ($javaLine.Count -eq 1 -and $javaLine[0] -match 'G1NewSizePercent=30.*G1MaxNewSizePercent=40.*G1RSetUpdatingPauseTimePercent=5') { 'tuned' } else { 'baseline-or-unknown' }
 $pidFile = Join-Path $root.FullName 'server.pid'
 $pidState = if (Test-Path -LiteralPath $pidFile) { (Get-Content -LiteralPath $pidFile -Raw).Trim() } else { 'none' }
+$processState = 'not-started'
+if ($pidState -match '^\d+$') {
+    $trackedProcess = Get-Process -Id ([int]$pidState) -ErrorAction SilentlyContinue
+    $processState = if ($null -ne $trackedProcess) { 'running' } else { 'exited' }
+}
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion; java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState"
+function Get-SafeLogLines {
+    param([string]$Path, [int]$Limit = 4)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return @() }
+    $lines = @(Get-Content -LiteralPath $Path -Tail 120 -ErrorAction SilentlyContinue | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $important = @($lines | Where-Object { $_ -match '(?i)(ERROR|FATAL|Exception|Caused by:|Unrecognized VM option|Could not find|UnsupportedClassVersion|Done \()' } | Select-Object -Last $Limit)
+    if ($important.Count -eq 0) { $important = @($lines | Select-Object -Last $Limit) }
+    return @($important | ForEach-Object {
+        $safe = [string]$_
+        $safe = $safe -replace '(?i)E:\\Administrator\\Desktop\\FunCity[^\s]*', '<FunCity-path>'
+        $safe = $safe -replace '[A-Z]:\\[^\s"'']+', '<path>'
+        $safe = $safe -replace '\b(?:\d{1,3}\.){3}\d{1,3}\b', '<ip>'
+        $safe = $safe -replace '[\r\n]+', ' '
+        if ($safe.Length -gt 240) { $safe = $safe.Substring(0, 240) }
+        $safe
+    })
+}
+
+$logsPath = Join-Path $root.FullName 'logs'
+$latestLog = Join-Path $logsPath 'latest.log'
+$stdoutFiles = @(Get-ChildItem -LiteralPath $logsPath -File -Filter 'funcity-console-*.out.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+$stderrFiles = @(Get-ChildItem -LiteralPath $logsPath -File -Filter 'funcity-console-*.err.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+$failureLines = @()
+if ($stderrFiles.Count -gt 0) { $failureLines += Get-SafeLogLines -Path $stderrFiles[0].FullName -Limit 3 }
+if (Test-Path -LiteralPath $latestLog -PathType Leaf) { $failureLines += Get-SafeLogLines -Path $latestLog -Limit 5 }
+if ($failureLines.Count -eq 0 -and $stdoutFiles.Count -gt 0) { $failureLines += Get-SafeLogLines -Path $stdoutFiles[0].FullName -Limit 3 }
+$failureSummary = if ($failureLines.Count -gt 0) { ($failureLines -join ' | ') } else { 'no startup log details yet' }
+if ($failureSummary.Length -gt 1500) { $failureSummary = $failureSummary.Substring(0, 1500) }
+
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion; java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState; startup=$failureSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
