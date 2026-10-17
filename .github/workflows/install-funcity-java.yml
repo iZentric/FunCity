@@ -1,0 +1,35 @@
+name: Install local FunCity Java runtime
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - scripts/install-funcity-java.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-lite-pc-operations
+  cancel-in-progress: false
+
+jobs:
+  install-java:
+    name: Install portable Java inside FunCity-Lite
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 15
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Install checksum-verified Java 8 locally
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installArgs = @{
+            ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          }
+          & .\scripts\install-funcity-java.ps1 @installArgs
