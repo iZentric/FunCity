@@ -1,0 +1,36 @@
+name: Verify FunCity Lite on PC
+
+on:
+  push:
+    branches:
+      - arena/f933ec78-funcity
+    paths:
+      - .github/workflows/verify-funcity-lite.yml
+      - scripts/verify-funcity-lite.ps1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: funcity-lite-pc-verification
+  cancel-in-progress: false
+
+jobs:
+  verify-server:
+    name: Verify only the FunCity project output
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 10
+    steps:
+      - name: Check out this branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Run read-only server checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $verifyArgs = @{
+            ServerPath = 'E:\Administrator\Desktop\FunCity\FunCity server\FunCity-Lite'
+          }
+          & .\scripts\verify-funcity-lite.ps1 @verifyArgs
