@@ -52,6 +52,14 @@ if (Test-Path -LiteralPath $localJava -PathType Leaf) {
     else { $localJavaVersion = 'local runtime files present' }
 }
 $stagingDirs = @(Get-ChildItem -LiteralPath $root.FullName -Directory -Force -Filter '.java*-runtime-staging-*' -ErrorAction SilentlyContinue)
+$taskCmdlet = Get-Command -Name Get-ScheduledTask -ErrorAction SilentlyContinue | Select-Object -First 1
+$runnerIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$taskSupport = if ($null -eq $taskCmdlet) { 'cmdlets-unavailable' } elseif ($runnerIdentity.User.Value -eq 'S-1-5-18') { 'runner-is-system' } else { 'user-scoped-ready' }
+$managedTaskState = 'none'
+if ($null -ne $taskCmdlet) {
+    $managedTask = Get-ScheduledTask -TaskName 'FunCity-Lite-Mohist-Server' -ErrorAction SilentlyContinue
+    if ($null -ne $managedTask) { $managedTaskState = [string]$managedTask.State }
+}
 
 $mods = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
 $plugins = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'plugins') -File -Filter '*.jar' -ErrorAction SilentlyContinue)
@@ -113,6 +121,6 @@ $latestTail = if ($latestTailLines.Count -gt 0) { ($latestTailLines -join ' | ')
 $startupSummary = "signals=$failureSummary; latest-tail=$latestTail"
 if ($startupSummary.Length -gt 2400) { $startupSummary = $startupSummary.Substring(0, 2400) }
 
-$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
+$summary = "EULA=$eula; Java=$javaVersion; local-Java=$localJavaVersion ($localJavaCompatibility); java-staging=$($stagingDirs.Count); TaskScheduler=$taskSupport/$managedTaskState; mods=$($mods.Count); plugins=$($plugins.Count); port=$port/$portState; EULA-gate=$gate; GC-profile=$tuning; PID-file=$pidState/$processState ($processIdentity); startup-state=$startupState; startup=$startupSummary"
 Write-Output "::notice title=FunCity Lite PC preflight::$summary"
 Write-Output $summary
