@@ -4,9 +4,11 @@ param(
 )
 
 # Starts the separate full-pack test instance with the accepted EULA. The
-# existing FunCity-Lite instance remains untouched and uses port 25565.
+# existing FunCity-Lite instance remains untouched on game TCP 25565.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'funcity-engine-helpers.ps1')
 $root = $null
+$script:LaunchStartedAt = Get-Date
 
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
@@ -58,7 +60,7 @@ function Get-RecentStartupLog {
     }
     $crashDirectory = Join-Path $ServerRoot 'crash-reports'
     if (Test-Path -LiteralPath $crashDirectory -PathType Container) {
-        $newestCrash = Get-ChildItem -LiteralPath $crashDirectory -File -Filter '*.txt' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $newestCrash = Get-ChildItem -LiteralPath $crashDirectory -File -Filter '*.txt' -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $script:LaunchStartedAt } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
         if ($null -ne $newestCrash) {
             $lines.Add('Newest crash report: ' + $newestCrash.Name)
             try { foreach ($line in @(Get-Content -LiteralPath $newestCrash.FullName -Tail 20 -ErrorAction Stop)) { $lines.Add($line) } }
@@ -101,6 +103,8 @@ $properties = Get-Content -LiteralPath (Join-Path $root.FullName 'server.propert
 $portLine = $properties | Where-Object { $_ -match '^\s*server-port\s*=' } | Select-Object -First 1
 $port = if ($null -eq $portLine) { 0 } else { [int](($portLine -replace '^\s*server-port\s*=\s*', '').Trim()) }
 Assert-Condition -Condition ($port -eq 25566) -Message "Test instance must use port 25566, found $port."
+$voiceChatUdpPort = 24455
+$voiceChatConfigPath = Get-FunCityVoiceChatServerConfigPath -ServerRoot $root.FullName
 $heapGB = [int]$inventory.heapGB
 Assert-Condition -Condition ($heapGB -ge 3 -and $heapGB -le 8) -Message "Invalid recorded heap size: $heapGB GB."
 
@@ -119,8 +123,11 @@ if ($portOpen) {
     Assert-Condition -Condition ($null -ne $existingProcess) -Message "Port $port is occupied but is not the FunCity Freeroam engine; no process was started."
     Assert-Condition -Condition ($null -ne $task -and $task.Description -like 'Managed by FunCity Freeroam Engine;*' -and $task.State -eq 'Running') -Message 'The current Freeroam process is not owned by the expected running manual-only task.'
     $serverPid = [int]$existingProcess.ProcessId
+    Assert-Condition -Condition ((Get-FunCityVoiceChatUdpPort -ConfigPath $voiceChatConfigPath) -eq $voiceChatUdpPort) -Message "The running server is not configured for voice-chat UDP port $voiceChatUdpPort; stop it before changing the config."
+    $voiceChatEndpoints = @(Get-FunCityLocalUdpEndpoints -Port $voiceChatUdpPort | Where-Object { [int]$_.OwningProcess -eq $serverPid })
+    Assert-Condition -Condition ($voiceChatEndpoints.Count -gt 0) -Message "The running engine process $serverPid is not listening on its configured voice-chat UDP port $voiceChatUdpPort."
     Set-Content -LiteralPath (Join-Path $root.FullName 'server.pid') -Value $serverPid -Encoding ASCII
-    $summary = "Server=already-running; PID=$serverPid; port=$port; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly; Task=$taskName; Java=Temurin-11.0.32.1"
+    $summary = "Server=already-running; PID=$serverPid; port=$port; voicechat-udp=$voiceChatUdpPort/listening; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly; Task=$taskName; Java=Temurin-11.0.32.1"
     Write-Output "::notice title=FunCity full-pack engine start::$summary"
     Write-Output $summary
     return
@@ -135,6 +142,23 @@ if ($null -ne $task -and $task.State -eq 'Running' -and $null -eq $existingProce
 
 $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 Assert-Condition -Condition ($null -ne $currentIdentity -and $currentIdentity.User.Value -ne 'S-1-5-18') -Message 'The Actions runner is LocalSystem; refusing to create a task under a different account.'
+$occupiedVoiceChatEndpoints = @(Get-FunCityLocalUdpEndpoints -Port $voiceChatUdpPort)
+if ($occupiedVoiceChatEndpoints.Count -gt 0) {
+    $voiceChatOwnerIds = @($occupiedVoiceChatEndpoints | Select-Object -ExpandProperty OwningProcess -Unique) -join ', '
+    throw "Voice-chat UDP port $voiceChatUdpPort is already occupied by process ID(s) $voiceChatOwnerIds; choose another dedicated voice-chat port before starting the test server."
+}
+Set-FunCityVoiceChatUdpPort -ConfigPath $voiceChatConfigPath -Port $voiceChatUdpPort | Out-Null
+Assert-Condition -Condition ((Get-FunCityVoiceChatUdpPort -ConfigPath $voiceChatConfigPath) -eq $voiceChatUdpPort) -Message 'Could not set the dedicated voice-chat UDP port before launch.'
+if ([System.IO.Path]::GetExtension($voiceChatConfigPath) -ieq '.toml') {
+    $defaultVoiceChatConfigPath = Join-Path $root.FullName 'defaultconfigs\voicechat-server.toml'
+    Set-FunCityVoiceChatUdpPort -ConfigPath $defaultVoiceChatConfigPath -Port $voiceChatUdpPort | Out-Null
+}
+Add-Member -InputObject $inventory -MemberType NoteProperty -Name voiceChatUdpPort -Value $voiceChatUdpPort -Force
+Set-Content -LiteralPath (Join-Path $root.FullName 'pack-mod-inventory.json') -Value (ConvertTo-Json -InputObject $inventory -Depth 8) -Encoding UTF8
+$readmePath = Join-Path $root.FullName 'README-FUNCITY-ENGINE.txt'
+$readmeLines = @(Get-Content -LiteralPath $readmePath | Where-Object { $_ -notmatch '^Simple Voice Chat uses UDP port ' })
+$readmeLines += "Simple Voice Chat uses UDP port $voiceChatUdpPort to avoid the local listener conflict on default voice UDP port 24454."
+Set-Content -LiteralPath $readmePath -Value $readmeLines -Encoding UTF8
 $launchArguments = @(
     '-Xms2G', "-Xmx${heapGB}G", '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled',
     '-XX:MaxGCPauseMillis=200', '-XX:+UnlockExperimentalVMOptions', '-XX:+DisableExplicitGC',
@@ -150,21 +174,22 @@ $taskDefinition = New-ScheduledTask -Action $taskAction -Principal $taskPrincipa
 Register-ScheduledTask -TaskName $taskName -InputObject $taskDefinition -Force -ErrorAction Stop | Out-Null
 $registeredTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
 Assert-Condition -Condition ($registeredTask.Triggers.Count -eq 0) -Message 'The managed task unexpectedly has an automatic trigger; it will not be started.'
+$launchStartedAt = Get-Date
+$script:LaunchStartedAt = $launchStartedAt
 Start-ScheduledTask -TaskName $taskName -ErrorAction Stop
 
-$launchStartedAt = Get-Date
 $pidPath = Join-Path $root.FullName 'server.pid'
 Set-Content -LiteralPath $pidPath -Value 'starting' -Encoding ASCII
 $reportPath = Join-Path $root.FullName 'BUILD-REPORT.txt'
-$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Server process management:' })
-$reportLines += "Server status: startup pending; task $taskName; port $port; mods $($mods.Count)."
+$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Server process management:' -and $_ -notmatch '^Voice chat UDP port:' })
+$reportLines += "Voice chat UDP port: $voiceChatUdpPort (Simple Voice Chat; avoids local default-port conflict)."
+$reportLines += "Server status: startup pending; game-TCP $port; voice-chat-UDP $voiceChatUdpPort; task $taskName; mods $($mods.Count)."
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
 $deadline = (Get-Date).AddMinutes(15)
 $ready = $false
 $serverPid = $null
 $stablePortChecks = 0
-$portReadyWithoutLogChecks = 0
 $latestLog = Join-Path $root.FullName 'logs\latest.log'
 while ((Get-Date) -lt $deadline) {
     $processInfo = Get-FunCityEngineProcess -ServerRoot $root.FullName
@@ -185,17 +210,17 @@ while ((Get-Date) -lt $deadline) {
             }
             catch { $logReady = $false }
         }
+        $voiceChatEndpoints = @(Get-FunCityLocalUdpEndpoints -Port $voiceChatUdpPort | Where-Object { [int]$_.OwningProcess -eq $serverPid })
+        $voiceChatReady = $voiceChatEndpoints.Count -gt 0
         if (Test-LocalTcpPort -Port $port) {
             $stablePortChecks++
-            if (-not $logReady) { $portReadyWithoutLogChecks++ }
-            if (($logReady -and $stablePortChecks -ge 2) -or $portReadyWithoutLogChecks -ge 6) {
+            if ($logReady -and $stablePortChecks -ge 2 -and $voiceChatReady) {
                 $ready = $true
                 break
             }
         }
         else {
             $stablePortChecks = 0
-            $portReadyWithoutLogChecks = 0
         }
     }
     else {
@@ -211,18 +236,28 @@ while ((Get-Date) -lt $deadline) {
 }
 if (-not $ready) {
     $lastLog = Get-RecentStartupLog -ServerRoot $root.FullName
-    throw "The full-pack engine did not hold port $port ready within 15 minutes; PID=$serverPid; recent-log=$lastLog"
+    throw "The full-pack engine did not hold game TCP port $port, voice UDP port $voiceChatUdpPort, and a Done (...)! readiness marker within 15 minutes; PID=$serverPid; recent-log=$lastLog"
 }
 
+Start-Sleep -Seconds 10
+$stableProcess = Get-FunCityEngineProcess -ServerRoot $root.FullName
+Assert-Condition -Condition ($null -ne $stableProcess -and [int]$stableProcess.ProcessId -eq $serverPid) -Message 'The engine process exited during its 10-second post-readiness stability check.'
 $runningTask = Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
 Assert-Condition -Condition ($runningTask.State -eq 'Running' -and $runningTask.Triggers.Count -eq 0) -Message 'The manual-only task is not running or has an unexpected automatic trigger.'
-$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Server process management:' })
-$reportLines += "Server status: running; PID $serverPid; port $port; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly."
+Assert-Condition -Condition (Test-LocalTcpPort -Port $port) -Message "The engine stopped accepting game connections on TCP port $port during its stability check."
+$stableVoiceEndpoints = @(Get-FunCityLocalUdpEndpoints -Port $voiceChatUdpPort | Where-Object { [int]$_.OwningProcess -eq $serverPid })
+Assert-Condition -Condition ($stableVoiceEndpoints.Count -gt 0) -Message "The engine process is not listening on its dedicated voice-chat UDP port $voiceChatUdpPort."
+$finalLogTail = @(Get-Content -LiteralPath $latestLog -Tail 160 -ErrorAction Stop)
+$finalReadyLine = $finalLogTail | Where-Object { $_ -match '(?i)Done \([^)]+\)!' } | Select-Object -Last 1
+Assert-Condition -Condition ($null -ne $finalReadyLine) -Message 'The engine lost its Done (...)! readiness marker before the post-readiness check.'
+$reportLines = @(Get-Content -LiteralPath $reportPath | Where-Object { $_ -notmatch '^Server status:' -and $_ -notmatch '^Server process management:' -and $_ -notmatch '^Voice chat UDP port:' })
+$reportLines += "Voice chat UDP port: $voiceChatUdpPort (Simple Voice Chat; avoids local default-port conflict)."
+$reportLines += "Server status: running; PID $serverPid; game-TCP $port; voice-chat-UDP $voiceChatUdpPort; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly."
 $reportLines += 'Server process management: manual-only Windows Scheduled Task ' + $taskName + ' (no logon or reboot trigger).'
 Set-Content -LiteralPath $reportPath -Value $reportLines -Encoding UTF8
 
 $logTail = Get-RecentStartupLog -ServerRoot $root.FullName
 if ($logTail.Length -gt 1200) { $logTail = $logTail.Substring($logTail.Length - 1200) }
-$summary = "Server=ready; PID=$serverPid; Mohist=1.16.5-1242; Forge=36.2.42; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly; Java=portable-Temurin-11.0.32.1; port=$port; EULA=true; Task=$taskName/Running/manual-only; startup-log=$logTail"
+$summary = "Server=ready; PID=$serverPid; Mohist=1.16.5-1242; Forge=36.2.42; server-loaded-mods=$($mods.Count); all-pack-mods=$expectedTotal; client-only-preserved=$expectedClientOnly; Java=portable-Temurin-11.0.32.1; game-TCP=$port; voice-chat-UDP=$voiceChatUdpPort/listening; EULA=true; Task=$taskName/Running/manual-only; startup-log=$logTail"
 Write-Output "::notice title=FunCity full-pack engine started::$summary"
 Write-Output $summary

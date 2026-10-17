@@ -5,6 +5,13 @@ param(
 
 # Read-only post-job persistence verification; this script never starts/stops a task.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'funcity-engine-helpers.ps1')
+
+trap {
+    $failure = ($_.Exception.Message -replace '[\r\n]+', ' ').Trim()
+    Write-Output "::error title=FunCity full-pack persistence verification::$failure"
+    throw
+}
 
 function Assert-Condition {
     param([bool]$Condition, [string]$Message)
@@ -61,6 +68,11 @@ $inventory = ConvertFrom-Json -InputObject (Get-Content -LiteralPath (Join-Path 
 $expectedTotal = [int]$inventory.sourceModJarCount
 $expectedServer = [int]$inventory.serverModJarCount
 $expectedClientOnly = [int]$inventory.clientOnlyModJarCount
+$voiceChatUdpPort = if ($null -ne $inventory.PSObject.Properties['voiceChatUdpPort']) { [int]$inventory.voiceChatUdpPort } else { 24455 }
+$voiceChatConfigPath = Get-FunCityVoiceChatServerConfigPath -ServerRoot $root.FullName
+Assert-Condition -Condition ((Get-FunCityVoiceChatUdpPort -ConfigPath $voiceChatConfigPath) -eq $voiceChatUdpPort) -Message "Simple Voice Chat is not configured for the dedicated UDP port $voiceChatUdpPort."
+$voiceChatEndpoints = @(Get-FunCityLocalUdpEndpoints -Port $voiceChatUdpPort | Where-Object { [int]$_.OwningProcess -eq $serverPid })
+Assert-Condition -Condition ($voiceChatEndpoints.Count -gt 0) -Message "The running FunCity server process is not listening on voice-chat UDP port $voiceChatUdpPort."
 $modFiles = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'mods') -File -Filter '*.jar' -ErrorAction Stop)
 $clientFiles = @(Get-ChildItem -LiteralPath (Join-Path $root.FullName 'client-only-mods') -File -Filter '*.jar' -ErrorAction Stop)
 Assert-Condition -Condition ($modFiles.Count -eq $expectedServer -and $clientFiles.Count -eq $expectedClientOnly -and $modFiles.Count + $clientFiles.Count -eq $expectedTotal -and $expectedTotal -eq @($inventory.mods).Count) -Message "Mod inventory changed: server=$($modFiles.Count)/$expectedServer; client-only=$($clientFiles.Count)/$expectedClientOnly; total=$expectedTotal."
@@ -76,6 +88,6 @@ Assert-Condition -Condition ($null -ne $readyLine) -Message ('Server process/por
 $errors = @($tail | Where-Object { $_ -match '(?i)\b(ERROR|FATAL|Exception|NoClassDefFoundError|ClassNotFoundException|Mixin apply failed)\b' })
 $errorSummary = if ($errors.Count -eq 0) { 'none in recent log tail' } else { ($errors | Select-Object -Last 8) -join ' | ' }
 if ($errorSummary.Length -gt 1800) { $errorSummary = $errorSummary.Substring($errorSummary.Length - 1800) }
-$summary = "Running=true; PID=$serverPid; Task=$taskName/Running/manual-only; port=$port/open-locally; server-loaded-mods=$($modFiles.Count)/$expectedServer; client-only-preserved=$($clientFiles.Count)/$expectedClientOnly; all-pack-mods=$expectedTotal; Java=portable-Temurin-11.0.32.1; ready=$readyLine; recent-errors=$errorSummary"
+$summary = "Running=true; PID=$serverPid; Task=$taskName/Running/manual-only; game-TCP=$port/open-locally; voice-chat-UDP=$voiceChatUdpPort/listening; server-loaded-mods=$($modFiles.Count)/$expectedServer; client-only-preserved=$($clientFiles.Count)/$expectedClientOnly; all-pack-mods=$expectedTotal; Java=portable-Temurin-11.0.32.1; ready=$readyLine; recent-errors=$errorSummary"
 Write-Output "::notice title=FunCity full-pack engine persistence check::$summary"
 Write-Output $summary

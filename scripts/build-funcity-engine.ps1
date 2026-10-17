@@ -15,6 +15,7 @@ param(
 # preserved. Mods from both the index and embedded overrides are loaded together
 # for compatibility testing; the pack's original files are never modified.
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'funcity-engine-helpers.ps1')
 
 function Get-PropertyValue {
     param($Object, [string]$Name)
@@ -330,12 +331,24 @@ try {
     $clientOnlyCount = @($allMods | Where-Object { -not $_.loadOnServer }).Count
     $buildNotes.Add('Copied ' + $overrideResult.configFiles.Count + ' safe config/defaultconfig/KubeJS/script/datapack override files.')
     $buildNotes.Add("Loaded $serverLoadedCount server-compatible mod JARs in mods/; preserved $clientOnlyCount client-only JARs under client-only-mods/ after the full-pack failure identified dedicated-server-only class references.")
+    $voiceChatUdpPort = 24455
+    $voiceChatConfigPath = Get-FunCityVoiceChatServerConfigPath -ServerRoot $stagingPath -WorldName 'world'
+    Set-FunCityVoiceChatUdpPort -ConfigPath $voiceChatConfigPath -Port $voiceChatUdpPort | Out-Null
+    if ([System.IO.Path]::GetExtension($voiceChatConfigPath) -ieq '.toml') {
+        $defaultVoiceChatConfigPath = Join-Path $stagingPath 'defaultconfigs\voicechat-server.toml'
+        Set-FunCityVoiceChatUdpPort -ConfigPath $defaultVoiceChatConfigPath -Port $voiceChatUdpPort | Out-Null
+    }
+    if ((Get-FunCityVoiceChatUdpPort -ConfigPath $voiceChatConfigPath) -ne $voiceChatUdpPort) {
+        throw 'The dedicated FunCity voice-chat UDP port could not be set in the server config.'
+    }
+    $buildNotes.Add("Simple Voice Chat uses UDP port $voiceChatUdpPort to avoid the existing local voice-chat listener on default port 24454.")
 
     $properties = @(
         '# FunCity Engine — full Freeroam modpack test instance',
         'motd=FunCity Engine | Freeroam 1.0.0 | test',
         "server-port=$Port",
         'server-ip=',
+        'level-name=world',
         'online-mode=true',
         'max-players=10',
         'view-distance=6',
@@ -388,6 +401,7 @@ pause
         forge = $forgeVersion
         engine = 'Mohist 1.16.5-1242 / Forge 36.2.42'
         port = $Port
+        voiceChatUdpPort = $voiceChatUdpPort
         heapGB = $HeapGB
         sourceModJarCount = $allMods.Count
         serverModJarCount = $serverLoadedCount
@@ -402,6 +416,7 @@ pause
     $readme.Add('A branded FunCity server distribution based on the matching Hypecity Mohist hybrid engine. This is a custom packaging/configuration around Mohist/Forge, not a from-scratch replacement for Minecraft or Forge.')
     $readme.Add("Pack: $([System.IO.Path]::GetFileName($resolvedPack)); Minecraft $minecraftVersion; Forge $forgeVersion.")
     $readme.Add("Engine: Mohist 1.16.5-1242; test port $Port; heap maximum ${HeapGB} GB.")
+    $readme.Add("Simple Voice Chat uses UDP port $voiceChatUdpPort to avoid the local listener conflict on default voice UDP port 24454.")
     $readme.Add('')
     $readme.Add("All $($allMods.Count) pack mod JARs are retained in this engine. $serverLoadedCount server-compatible mods are in mods/; $clientOnlyCount render/account-switcher mods are in client-only-mods/ and are deliberately not loaded by a dedicated server because the first test reported invalid DEDICATED_SERVER client-class references.")
     $readme.Add('No additional plugins were added, so this test isolates the pack and hybrid engine.')
@@ -413,7 +428,7 @@ pause
     $report = [System.Collections.Generic.List[string]]::new()
     $report.Add('Build result: complete')
     $report.Add('Pack: ' + [System.IO.Path]::GetFileName($resolvedPack) + ' | ' + [string](Get-PropertyValue -Object $manifest -Name 'name') + ' ' + [string](Get-PropertyValue -Object $manifest -Name 'versionId'))
-    $report.Add("Engine: Mohist 1.16.5-1242 / Forge 36.2.42; port=$Port; heap-max=${HeapGB} GB")
+    $report.Add("Engine: Mohist 1.16.5-1242 / Forge 36.2.42; port=$Port; voicechat-udp=$voiceChatUdpPort; heap-max=${HeapGB} GB")
     $report.Add('Manifest mod JARs downloaded and hash-verified: ' + $manifestMods.Count)
     foreach ($record in @($allMods | Where-Object { $_.source -eq 'modrinth.index.json' })) {
         $report.Add("  mod: $($record.file) | server=$($record.serverEnvironment) | load-on-server=$($record.loadOnServer) | destination=$($record.relativeDestination) | SHA-256=$($record.sha256)")
@@ -432,8 +447,8 @@ pause
 
     [System.IO.Directory]::Move($stagingPath, $finalPath)
     Write-Host "FunCity full-pack test engine prepared at: $finalPath"
-    Write-Host "Manifest mods=$($manifestMods.Count); embedded override mods=$($overrideResult.embeddedMods.Count); server-loaded=$serverLoadedCount; client-only-preserved=$clientOnlyCount; total-pack-mods=$($allMods.Count); port=$Port; Java=portable Temurin 11.0.32.1."
-    Write-Output "::notice title=FunCity full-pack engine build::Output=$finalPath; manifest-mods=$($manifestMods.Count); embedded-mods=$($overrideResult.embeddedMods.Count); server-loaded=$serverLoadedCount; client-only-preserved=$clientOnlyCount; total-pack-mods=$($allMods.Count); port=$Port; engine=Mohist-1.16.5-1242/Forge-36.2.42; Java=portable-Temurin-11.0.32.1"
+    Write-Host "Manifest mods=$($manifestMods.Count); embedded override mods=$($overrideResult.embeddedMods.Count); server-loaded=$serverLoadedCount; client-only-preserved=$clientOnlyCount; total-pack-mods=$($allMods.Count); port=$Port; voicechat-udp=$voiceChatUdpPort; Java=portable Temurin 11.0.32.1."
+    Write-Output "::notice title=FunCity full-pack engine build::Output=$finalPath; manifest-mods=$($manifestMods.Count); embedded-mods=$($overrideResult.embeddedMods.Count); server-loaded=$serverLoadedCount; client-only-preserved=$clientOnlyCount; total-pack-mods=$($allMods.Count); port=$Port; voicechat-udp=$voiceChatUdpPort; engine=Mohist-1.16.5-1242/Forge-36.2.42; Java=portable-Temurin-11.0.32.1"
 }
 catch {
     $failureReport = Join-Path $stagingPath 'BUILD-FAILED.txt'

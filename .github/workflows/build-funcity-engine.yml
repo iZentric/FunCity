@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/build-funcity-engine.yml
       - scripts/build-funcity-engine.ps1
+      - scripts/funcity-engine-helpers.ps1
 
 permissions:
   contents: read
@@ -24,7 +25,7 @@ jobs:
       - name: Check out this branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Build without overwriting the existing Lite server
         shell: powershell

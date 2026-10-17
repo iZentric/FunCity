@@ -7,6 +7,9 @@ on:
     paths:
       - .github/workflows/start-funcity-engine.yml
       - scripts/start-funcity-engine.ps1
+      - scripts/verify-funcity-engine.ps1
+      - scripts/verify-running-funcity-engine.ps1
+      - scripts/funcity-engine-helpers.ps1
 
 permissions:
   contents: read
@@ -24,7 +27,7 @@ jobs:
       - name: Check out this branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Re-verify all pack mods before launch
         shell: powershell
@@ -47,9 +50,9 @@ jobs:
       - name: Check out this branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
-      - name: Verify running process, ready log, and port
+      - name: Verify running process, ready log, and ports
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
